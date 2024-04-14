@@ -15,7 +15,10 @@ use autoken::{cap, BorrowsMut, BorrowsRef, CapTarget, TokenSet};
 use generational_arena::{Arena, Index};
 use rustc_hash::FxHashMap;
 
-use super::lock::UnpoisonExt;
+use super::{
+    deferred::{DeferQueue, DeferQueueCap},
+    lock::UnpoisonExt,
+};
 
 // === Universe === //
 
@@ -44,6 +47,14 @@ impl fmt::Debug for Universe {
 impl Universe {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn run_with_queue<L: ComponentList, R>(
+        &self,
+        queue: &mut DeferQueue,
+        f: impl FnOnce() -> R,
+    ) -> R {
+        self.run::<L, R>(|| DeferQueueCap::provide(queue, f))
     }
 
     pub fn run<L: ComponentList, R>(&self, f: impl FnOnce() -> R) -> R {
