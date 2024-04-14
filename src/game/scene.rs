@@ -1,4 +1,9 @@
-use crate::{component, util::entity::Entity};
+use autoken::BorrowsMut;
+
+use crate::{
+    component, delegate,
+    util::arena::{CompTokensOf, Entity},
+};
 
 #[derive(Debug, Default)]
 pub struct SceneManager {
@@ -28,3 +33,9 @@ impl SceneManager {
         self.current.expect("no initial scene set")
     }
 }
+
+delegate! {
+    pub fn SceneUpdateHandler(cx: &mut BorrowsMut<CompTokensOf<()>>)
+}
+
+component!(SceneUpdateHandler);

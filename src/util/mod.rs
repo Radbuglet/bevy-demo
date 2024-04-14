@@ -1,2 +1,3 @@
 pub mod arena;
-pub mod entity;
+pub mod delegate;
+pub mod lock;

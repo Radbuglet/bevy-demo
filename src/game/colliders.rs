@@ -21,7 +21,7 @@ impl ColliderManager {
         self.colliders.swap_remove(index);
 
         if let Some(moved) = self.colliders.get(index) {
-            moved.get_mut().index = index;
+            moved.deref_mut().index = index;
         }
     }
 
