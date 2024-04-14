@@ -48,7 +48,7 @@ impl Universe {
         Self::default()
     }
 
-    pub fn acquire<L: ComponentList, R>(&self, f: impl FnOnce() -> R) -> R {
+    pub fn run<L: ComponentList, R>(&self, f: impl FnOnce() -> R) -> R {
         unsafe {
             // Rust-Analyzer doesn't like this expression for some reason.
             #[allow(clippy::explicit_auto_deref)]
@@ -68,13 +68,13 @@ impl Universe {
         }
     }
 
-    pub fn spawn<L: ComponentList>(&self, f: impl 'static + FnOnce() + Send + Sync) {
+    pub fn queue_task<L: ComponentList>(&self, f: impl 'static + FnOnce() + Send + Sync) {
         let mut f = Some(f);
         self.task_list
             .lock()
             .unpoison()
             .push_back(Box::new(move |world| {
-                world.acquire::<L, _>(|| f.take().unwrap()());
+                world.run::<L, _>(|| f.take().unwrap()());
             }))
     }
 
@@ -89,7 +89,7 @@ pub struct UniverseAcquires<L: ComponentList>(PhantomData<fn() -> L>);
 
 impl<'a, L: ComponentList> CapTarget<&'a Universe> for UniverseAcquires<L> {
     fn provide<R>(universe: &'a Universe, f: impl FnOnce() -> R) -> R {
-        universe.acquire::<L, R>(f)
+        universe.run::<L, R>(f)
     }
 }
 
@@ -108,8 +108,8 @@ fn unpoison<G>(guard: LockResult<G>) -> G {
     }
 }
 
-pub fn spawn_universe_task<L: ComponentList>(f: impl 'static + FnOnce() + Send + Sync) {
-    UniverseCapability::get(|v| v).0.spawn::<L>(f);
+pub fn queue_task_in_universe<L: ComponentList>(f: impl 'static + FnOnce() + Send + Sync) {
+    UniverseCapability::get(|v| v).0.queue_task::<L>(f);
 }
 
 // === CompTokensOf === //
@@ -124,18 +124,18 @@ pub type CompTokensOf<T> = (
 );
 
 pub trait CompBorrowsExt {
-    fn spawn_universe_task<L: ComponentList>(&self, f: impl 'static + FnOnce() + Send + Sync);
+    fn queue_universe_task<L: ComponentList>(&self, f: impl 'static + FnOnce() + Send + Sync);
 }
 
 impl<T: TokenSet> CompBorrowsExt for BorrowsMut<'_, T> {
-    fn spawn_universe_task<L: ComponentList>(&self, f: impl 'static + FnOnce() + Send + Sync) {
-        self.absorb_ref(|| spawn_universe_task::<L>(f));
+    fn queue_universe_task<L: ComponentList>(&self, f: impl 'static + FnOnce() + Send + Sync) {
+        self.absorb_ref(|| queue_task_in_universe::<L>(f));
     }
 }
 
 impl<T: TokenSet> CompBorrowsExt for BorrowsRef<'_, T> {
-    fn spawn_universe_task<L: ComponentList>(&self, f: impl 'static + FnOnce() + Send + Sync) {
-        self.absorb(|| spawn_universe_task::<L>(f));
+    fn queue_universe_task<L: ComponentList>(&self, f: impl 'static + FnOnce() + Send + Sync) {
+        self.absorb(|| queue_task_in_universe::<L>(f));
     }
 }
 
