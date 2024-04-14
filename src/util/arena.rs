@@ -4,11 +4,10 @@
 use std::{
     any::{Any, TypeId},
     cell::Cell,
-    collections::VecDeque,
     fmt,
     marker::PhantomData,
     ops::{Deref, DerefMut},
-    sync::{Arc, LockResult, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard},
+    sync::{Arc, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard},
     thread::LocalKey,
 };
 
@@ -34,7 +33,6 @@ pub struct Universe {
 
     // TODO: Optimize and clean up
     entities: Mutex<Arena<FxHashMap<TypeId, Index>>>,
-    task_list: Mutex<VecDeque<Box<dyn FnMut(&mut Self) + Send + Sync>>>,
 }
 
 impl fmt::Debug for Universe {
@@ -52,7 +50,7 @@ impl Universe {
         unsafe {
             // Rust-Analyzer doesn't like this expression for some reason.
             #[allow(clippy::explicit_auto_deref)]
-            let _guard = L::apply(&mut *unpoison(self.components.lock()));
+            let _guard = L::apply(&mut *self.components.lock().unpoison());
 
             autoken::absorb::<L::TokensMut, R>(|| {
                 fn dummy_borrow_set<'a, T: TokenSet>() -> &'a () {
@@ -65,22 +63,6 @@ impl Universe {
                 let _ = all_borrow;
                 res
             })
-        }
-    }
-
-    pub fn queue_task<L: ComponentList>(&self, f: impl 'static + FnOnce() + Send + Sync) {
-        let mut f = Some(f);
-        self.task_list
-            .lock()
-            .unpoison()
-            .push_back(Box::new(move |world| {
-                world.run::<L, _>(|| f.take().unwrap()());
-            }))
-    }
-
-    pub fn dispatch(&mut self) {
-        while let Some(mut task) = self.task_list.get_mut().unpoison().pop_front() {
-            task(self);
         }
     }
 }
@@ -101,17 +83,6 @@ fn get_component_in_map<T: Component>(
         .or_insert_with(|| Arc::new(RwLock::new(Arena::<T>::new())))
 }
 
-fn unpoison<G>(guard: LockResult<G>) -> G {
-    match guard {
-        Ok(guard) => guard,
-        Err(err) => err.into_inner(),
-    }
-}
-
-pub fn queue_task_in_universe<L: ComponentList>(f: impl 'static + FnOnce() + Send + Sync) {
-    UniverseCapability::get(|v| v).0.queue_task::<L>(f);
-}
-
 // === CompTokensOf === //
 
 pub type CompBorrowsRef<'a, T> = BorrowsRef<'a, CompTokensOf<T>>;
@@ -122,22 +93,6 @@ pub type CompTokensOf<T> = (
     <T as ComponentList>::Tokens,
     autoken::Ref<UniverseCapability>,
 );
-
-pub trait CompBorrowsExt {
-    fn queue_universe_task<L: ComponentList>(&self, f: impl 'static + FnOnce() + Send + Sync);
-}
-
-impl<T: TokenSet> CompBorrowsExt for BorrowsMut<'_, T> {
-    fn queue_universe_task<L: ComponentList>(&self, f: impl 'static + FnOnce() + Send + Sync) {
-        self.absorb_ref(|| queue_task_in_universe::<L>(f));
-    }
-}
-
-impl<T: TokenSet> CompBorrowsExt for BorrowsRef<'_, T> {
-    fn queue_universe_task<L: ComponentList>(&self, f: impl 'static + FnOnce() + Send + Sync) {
-        self.absorb(|| queue_task_in_universe::<L>(f));
-    }
-}
 
 // === ComponentList === //
 
@@ -168,7 +123,7 @@ unsafe impl<T: Component> ComponentList for &'_ T {
     }
 
     unsafe fn apply(universe: &mut UniverseComponentMap) -> Self::ApplyGuard {
-        let guard = unpoison(get_component_in_map::<T>(universe).read());
+        let guard = get_component_in_map::<T>(universe).read().unpoison();
         let ptr = (&*guard) as *const (dyn Any + Send + Sync) as *const Arena<T> as *mut Arena<T>;
 
         (
@@ -194,7 +149,7 @@ unsafe impl<T: Component> ComponentList for &'_ mut T {
     }
 
     unsafe fn apply(universe: &mut UniverseComponentMap) -> Self::ApplyGuard {
-        let mut guard = unpoison(get_component_in_map::<T>(universe).write());
+        let mut guard = get_component_in_map::<T>(universe).write().unpoison();
         let ptr = (&mut *guard) as *mut (dyn Any + Send + Sync) as *mut Arena<T>;
 
         (
@@ -314,29 +269,12 @@ macro_rules! component {
 
 // === Entity === //
 
-#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Ord, PartialOrd)]
 pub struct Entity {
     index: Index,
 }
 
-impl Default for Entity {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl Entity {
-    pub fn new() -> Self {
-        let universe = UniverseCapability::get(|v| v).0;
-        let index = universe
-            .entities
-            .lock()
-            .unpoison()
-            .insert(FxHashMap::default());
-
-        Self { index }
-    }
-
     pub fn insert<T: Component>(self, comp: T) -> Obj<T> {
         self.insert_obj(Obj::new(comp))
     }
@@ -374,9 +312,14 @@ impl Entity {
         universe.entities.lock().unpoison().contains(self.index)
     }
 
-    pub fn destroy(self) {
-        let universe = UniverseCapability::get(|v| v).0;
-        universe.entities.lock().unpoison().remove(self.index);
+    pub fn try_upgrade(self) -> Option<StrongEntity> {
+        // TODO: Reference counting
+        self.is_alive().then_some(StrongEntity { entity: self })
+    }
+
+    pub fn upgrade(self) -> StrongEntity {
+        self.try_upgrade()
+            .expect("attempted to upgrade dead entity")
     }
 }
 
@@ -450,5 +393,64 @@ impl<T: Component> DerefMut for Obj<T> {
     fn deref_mut<'a>(&'a mut self) -> &'a mut Self::Target {
         autoken::tie!('a => mut ComponentArenaToken<T>);
         (*self).deref_mut()
+    }
+}
+
+// === StrongEntity === //
+
+#[derive(Debug, Clone, Hash, Eq, PartialEq, Ord, PartialOrd)]
+pub struct StrongEntity {
+    entity: Entity,
+}
+
+impl Default for StrongEntity {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl StrongEntity {
+    pub fn new() -> Self {
+        let universe = UniverseCapability::get(|v| v).0;
+        let index = universe
+            .entities
+            .lock()
+            .unpoison()
+            .insert(FxHashMap::default());
+
+        Self {
+            entity: Entity { index },
+        }
+    }
+
+    pub fn entity(&self) -> Entity {
+        self.entity
+    }
+
+    pub fn split_guard(self) -> (StrongEntity, Entity) {
+        let entity = self.entity;
+        (self, entity)
+    }
+
+    pub fn insert<T: Component>(&self, comp: T) -> Obj<T> {
+        self.entity.insert(comp)
+    }
+
+    pub fn insert_obj<T: Component>(&self, comp: Obj<T>) -> Obj<T> {
+        self.entity.insert_obj(comp)
+    }
+
+    pub fn try_get<T: Component>(&self) -> Option<Obj<T>> {
+        self.entity.try_get()
+    }
+
+    pub fn get<T: Component>(&self) -> Obj<T> {
+        self.entity.get()
+    }
+}
+
+impl Drop for StrongEntity {
+    fn drop(&mut self) {
+        // TODO: Reference counting
     }
 }
