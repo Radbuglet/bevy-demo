@@ -6,3 +6,6 @@ edition = "2021"
 [dependencies]
 autoken = { git = "https://github.com/Radbuglet/autoken.git", rev = "f02c8390ebd310e3f5679ffec2a31a1e6a217cbc" }
 bevy_ecs = "0.13.2"
+generational-arena = "0.2.9"
+macroquad = "0.4.5"
+scopeguard = "1.2.0"

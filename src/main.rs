@@ -1,41 +1,42 @@
-use bevy_ecs::{
-    component::Component,
-    entity::Entity,
-    schedule::Schedule,
-    system::{Res, Resource},
-    world::World,
-};
-use util::ecs::{RandomAccess, RandomEntityExt, RandomQuery};
+#![feature(arbitrary_self_types)]
 
+use bevy_ecs::{schedule::Schedule, world::World};
+use macroquad::{
+    input::{is_key_pressed, is_quit_requested, KeyCode},
+    window::next_frame,
+};
+
+pub mod game;
 pub mod util;
 
-#[derive(Debug, Resource)]
-pub struct GlobalCounter(Entity);
-
-#[derive(Debug, Component)]
-pub struct Counter(pub u32);
-
-fn main() {
-    // Build world
-    let mut world = World::new();
-    let counter = world.spawn(Counter(0)).id();
-    world.insert_resource(GlobalCounter(counter));
-
-    // Build schedule
-    let mut schedule = Schedule::default();
-    schedule.add_systems(whee);
-
-    // Run
-    schedule.run(&mut world);
+#[derive(Default)]
+pub struct AppBuilder {
+    pub world: World,
+    pub startup: Schedule,
+    pub update: Schedule,
+    pub render: Schedule,
+    pub unlink: Schedule,
 }
 
-random_component!(Counter);
+#[macroquad::main("Demo App")]
+async fn main() {
+    let mut app = AppBuilder::default();
+    game::build(&mut app);
 
-fn whee(query: RandomAccess<&'static mut Counter>, counter: Res<GlobalCounter>) {
-    let counter = counter.0;
+    let AppBuilder {
+        mut world,
+        mut startup,
+        mut update,
+        mut render,
+        mut unlink,
+    } = app;
 
-    query.provide(|| {
-        counter.get_mut::<Counter>().0 += 1;
-        dbg!(counter.get::<Counter>());
-    });
+    startup.run(&mut world);
+
+    while !is_quit_requested() && !is_key_pressed(KeyCode::Escape) {
+        update.run(&mut world);
+        render.run(&mut world);
+        unlink.run(&mut world);
+        next_frame().await;
+    }
 }
