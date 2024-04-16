@@ -83,6 +83,7 @@ dependencies = [
  "macroquad",
  "rustc-hash",
  "scopeguard",
+ "smallvec",
 ]
 
 [[package]]

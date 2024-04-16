@@ -1,7 +1,8 @@
-pub mod player;
+pub mod actor;
+pub mod math;
 pub mod tile;
 
 pub fn build(app: &mut crate::AppBuilder) {
-    player::build(app);
+    actor::build(app);
     tile::build(app);
 }

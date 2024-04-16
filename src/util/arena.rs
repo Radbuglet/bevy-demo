@@ -14,6 +14,7 @@ use bevy_ecs::{
     bundle::Bundle,
     component::{Component, ComponentId, Tick},
     entity::Entity,
+    event::Event,
     removal_detection::RemovedComponents,
     system::{Commands, Resource, SystemMeta, SystemParam},
     world::{unsafe_world_cell::UnsafeWorldCell, World},
@@ -464,7 +465,7 @@ impl<T> Clone for Obj<T> {
 }
 
 impl<T: RandomComponent> Obj<T> {
-    pub fn new(owner: Entity, value: T) -> Self {
+    fn new(owner: Entity, value: T) -> Self {
         let arena = T::arena_mut();
         match arena.map.entry(owner) {
             hash_map::Entry::Occupied(entry) => {
@@ -536,6 +537,10 @@ impl<T: RandomComponent> DerefMut for Obj<T> {
 pub trait RandomEntityExt {
     fn insert<T: RandomComponent>(self, value: T) -> Obj<T>;
 
+    fn remove<T: RandomComponent>(self);
+
+    fn send<E: Event>(self, event: E);
+
     fn has<T: RandomComponent>(self) -> bool;
 
     fn try_get<T: RandomComponent>(self) -> Option<Obj<T>>;
@@ -546,6 +551,21 @@ pub trait RandomEntityExt {
 impl RandomEntityExt for Entity {
     fn insert<T: RandomComponent>(self, value: T) -> Obj<T> {
         Obj::new(self, value)
+    }
+
+    fn remove<T: RandomComponent>(self) {
+        CommandsCap::get_mut(|v| {
+            v.entity(self).remove::<ObjOwner<T>>();
+        });
+    }
+
+    fn send<E: Event>(self, event: E) {
+        CommandsCap::get_mut(|v| {
+            // TODO: Do something more efficient
+            v.add(|world: &mut World| {
+                world.send_event(event);
+            });
+        });
     }
 
     fn has<T: RandomComponent>(self) -> bool {
