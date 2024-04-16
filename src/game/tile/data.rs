@@ -1,9 +1,7 @@
-use bevy_ecs::{entity::Entity, event::Event, removal_detection::RemovedComponents, system::Query};
-use macroquad::{
-    color::GREEN,
-    math::{IVec2, Vec2},
-    shapes::draw_rectangle,
-};
+use core::fmt;
+
+use bevy_ecs::{entity::Entity, event::Event, removal_detection::RemovedComponents};
+use macroquad::math::{IVec2, Vec2};
 use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
 
@@ -14,7 +12,10 @@ use crate::{
         scalar::ilerp_f32,
     },
     random_component,
-    util::arena::{spawn_entity, Obj, ObjOwner, RandomAccess, RandomEntityExt},
+    util::{
+        arena::{spawn_entity, Obj, ObjOwner, RandomAccess, RandomComponent, RandomEntityExt},
+        lang::ensure_index,
+    },
 };
 
 // === Definition === //
@@ -302,35 +303,45 @@ pub struct BaseMaterialDescriptor {
     pub name: String,
 }
 
+pub struct MaterialDescriptorCache<T> {
+    cache: Vec<Option<Obj<T>>>,
+}
+
+impl<T> fmt::Debug for MaterialDescriptorCache<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("MaterialDescriptorCache")
+            .finish_non_exhaustive()
+    }
+}
+
+impl<T> Default for MaterialDescriptorCache<T> {
+    fn default() -> Self {
+        Self { cache: Vec::new() }
+    }
+}
+
+impl<T> MaterialDescriptorCache<T> {
+    pub fn get(&mut self, registry: &MaterialRegistry, id: MaterialId) -> Option<Obj<T>>
+    where
+        T: RandomComponent,
+    {
+        if let Some(Some(cached)) = self.cache.get(id.0 as usize) {
+            return Some(*cached);
+        }
+
+        let obj = registry.lookup(id).try_get::<T>();
+        *ensure_index(&mut self.cache, id.0 as usize) = obj;
+        obj
+    }
+}
+
 // === Systems === //
 
 pub fn build(app: &mut crate::AppBuilder) {
     app.add_unlinker::<TileWorld>();
     app.add_unlinker::<TileChunk>();
-    app.render.add_systems(sys_render_chunks);
+
     app.disposer.add_systems(sys_cleanup_chunk);
-}
-
-fn sys_render_chunks(
-    mut query: Query<&ObjOwner<TileWorld>>,
-    mut rand: RandomAccess<(&TileWorld, &TileChunk)>,
-) {
-    rand.provide(|| {
-        for &ObjOwner(world) in query.iter_mut() {
-            let config = world.config();
-
-            for x in 0..100 {
-                for y in 0..100 {
-                    let material = world.tile(IVec2::new(x, y));
-
-                    if material != MaterialId::AIR {
-                        let rect = config.tile_to_actor_rect(IVec2::new(x, y));
-                        draw_rectangle(rect.x(), rect.y(), rect.w(), rect.h(), GREEN);
-                    }
-                }
-            }
-        }
-    });
 }
 
 fn sys_cleanup_chunk(

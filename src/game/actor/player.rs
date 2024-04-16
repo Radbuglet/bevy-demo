@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 
 use bevy_ecs::{component::Component, entity::Entity, schedule::IntoSystemConfigs, system::Query};
 use macroquad::{
-    color::{Color, DARKPURPLE, RED},
+    color::{Color, DARKPURPLE, GREEN, RED},
     input::{is_key_down, KeyCode},
     math::Vec2,
     shapes::draw_circle,
@@ -10,8 +10,9 @@ use macroquad::{
 };
 
 use crate::{
-    game::tile::data::{
-        BaseMaterialDescriptor, MaterialRegistry, TileChunk, TileLayerConfig, TileWorld,
+    game::tile::{
+        data::{BaseMaterialDescriptor, MaterialRegistry, TileChunk, TileLayerConfig, TileWorld},
+        render::{RenderableWorld, SolidTileMaterial},
     },
     util::arena::{spawn_entity, RandomAccess, RandomEntityExt},
 };
@@ -44,17 +45,23 @@ fn sys_create_local_player(
         &mut TileWorld,
         &mut MaterialRegistry,
         &mut BaseMaterialDescriptor,
+        &mut SolidTileMaterial,
     )>,
 ) {
     rand.provide(|| {
-        let world = spawn_entity(());
+        let world = spawn_entity(RenderableWorld::default());
         world.insert(TileWorld::new(TileLayerConfig {
             offset: Vec2::ZERO,
             size: 50.,
         }));
+
         let mut registry = world.insert(MaterialRegistry::default());
         registry.register("game:air", spawn_entity(()));
-        registry.register("game:grass", spawn_entity(()));
+        registry.register("game:grass", {
+            let descriptor = spawn_entity(());
+            descriptor.insert(SolidTileMaterial { color: GREEN });
+            descriptor
+        });
 
         spawn_entity((
             Pos(Vec2::ZERO),
