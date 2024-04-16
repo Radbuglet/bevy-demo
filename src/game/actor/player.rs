@@ -1,9 +1,6 @@
 use std::collections::VecDeque;
 
-use bevy_ecs::{
-    component::Component,
-    system::{Commands, Query},
-};
+use bevy_ecs::{component::Component, entity::Entity, schedule::IntoSystemConfigs, system::Query};
 use macroquad::{
     color::{Color, DARKPURPLE, RED},
     input::{is_key_down, KeyCode},
@@ -12,44 +9,98 @@ use macroquad::{
     window::{screen_height, screen_width},
 };
 
+use crate::{
+    game::tile::data::{
+        BaseMaterialDescriptor, MaterialRegistry, TileChunk, TileLayerConfig, TileWorld,
+    },
+    util::arena::{spawn_entity, RandomAccess, RandomEntityExt},
+};
+
 #[derive(Component)]
 pub struct Pos(Vec2);
 
 #[derive(Component)]
 pub struct Vel(Vec2);
 
-#[derive(Component, Default)]
+#[derive(Component)]
 pub struct Player {
+    world: Entity,
     trail: VecDeque<Vec2>,
 }
 
 pub fn build(app: &mut crate::AppBuilder) {
-    app.startup.add_systems(system_create_local_player);
-    app.update.add_systems(system_update_kinematics);
-    app.update.add_systems(system_handle_controls);
-    app.render.add_systems(system_render_players);
+    app.startup.add_systems(sys_create_local_player);
+
+    app.update.add_systems((
+        sys_handle_controls,
+        sys_update_kinematics.after(sys_handle_controls),
+    ));
+
+    app.render.add_systems(sys_render_players);
 }
 
-fn system_create_local_player(mut cmd: Commands) {
-    cmd.spawn((Pos(Vec2::ZERO), Vel(Vec2::ONE), Player::default()));
+fn sys_create_local_player(
+    mut rand: RandomAccess<(
+        &mut TileWorld,
+        &mut MaterialRegistry,
+        &mut BaseMaterialDescriptor,
+    )>,
+) {
+    rand.provide(|| {
+        let world = spawn_entity(());
+        world.insert(TileWorld::new(TileLayerConfig {
+            offset: Vec2::ZERO,
+            size: 50.,
+        }));
+        let mut registry = world.insert(MaterialRegistry::default());
+        registry.register("game:air", spawn_entity(()));
+        registry.register("game:grass", spawn_entity(()));
+
+        spawn_entity((
+            Pos(Vec2::ZERO),
+            Vel(Vec2::ONE),
+            Player {
+                world,
+                trail: VecDeque::new(),
+            },
+        ));
+    });
 }
 
-fn system_update_kinematics(mut query: Query<(&mut Pos, &mut Vel, &mut Player)>) {
-    for (mut pos, mut vel, mut player) in query.iter_mut() {
-        pos.0 += vel.0;
-        vel.0 *= 0.98;
+fn sys_update_kinematics(
+    mut query: Query<(&mut Pos, &mut Vel, &mut Player)>,
+    mut rand: RandomAccess<(
+        &mut TileWorld,
+        &mut TileChunk,
+        &mut MaterialRegistry,
+        &mut BaseMaterialDescriptor,
+    )>,
+) {
+    rand.provide(|| {
+        for (mut pos, mut vel, mut player) in query.iter_mut() {
+            pos.0 += vel.0;
+            vel.0 *= 0.98;
 
-        pos.0.x = pos.0.x.rem_euclid(screen_width());
-        pos.0.y = pos.0.y.rem_euclid(screen_height());
+            pos.0.x = pos.0.x.rem_euclid(screen_width());
+            pos.0.y = pos.0.y.rem_euclid(screen_height());
 
-        player.trail.push_front(pos.0);
-        if player.trail.len() > 100 {
-            player.trail.pop_back();
+            player.trail.push_front(pos.0);
+            if player.trail.len() > 100 {
+                player.trail.pop_back();
+            }
+
+            let world = player.world;
+            let world_data = world.get::<TileWorld>();
+            let world_mats = world.get::<MaterialRegistry>();
+            world_data.set_tile(
+                world_data.config().actor_to_tile(pos.0),
+                world_mats.lookup_by_name("game:grass").unwrap(),
+            );
         }
-    }
+    });
 }
 
-fn system_handle_controls(mut query: Query<&mut Vel>) {
+fn sys_handle_controls(mut query: Query<&mut Vel>) {
     let mut heading = Vec2::ZERO;
     if is_key_down(KeyCode::A) {
         heading += Vec2::NEG_X;
@@ -71,7 +122,7 @@ fn system_handle_controls(mut query: Query<&mut Vel>) {
     }
 }
 
-fn system_render_players(mut query: Query<(&Pos, &Player)>) {
+fn sys_render_players(mut query: Query<(&Pos, &Player)>) {
     for (pos, player) in query.iter_mut() {
         for (i, &trail) in player.trail.iter().rev().enumerate() {
             draw_circle(

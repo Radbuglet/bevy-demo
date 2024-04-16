@@ -1,5 +1,9 @@
-use bevy_ecs::{entity::Entity, event::Event, removal_detection::RemovedComponents};
-use macroquad::math::{IVec2, Vec2};
+use bevy_ecs::{entity::Entity, event::Event, removal_detection::RemovedComponents, system::Query};
+use macroquad::{
+    color::GREEN,
+    math::{IVec2, Vec2},
+    shapes::draw_rectangle,
+};
 use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
 
@@ -15,7 +19,12 @@ use crate::{
 
 // === Definition === //
 
-random_component!(TileWorld, TileChunk);
+random_component!(
+    TileWorld,
+    TileChunk,
+    MaterialRegistry,
+    BaseMaterialDescriptor,
+);
 
 #[derive(Event)]
 pub struct WorldCreatedChunk {
@@ -152,6 +161,13 @@ pub struct TileWorld {
 }
 
 impl TileWorld {
+    pub fn new(config: TileLayerConfig) -> Self {
+        Self {
+            config,
+            chunks: FxHashMap::default(),
+        }
+    }
+
     fn insert_chunk(mut self: Obj<Self>, pos: IVec2, mut chunk: Obj<TileChunk>) {
         chunk.world = Some(self);
         chunk.pos = pos;
@@ -184,12 +200,14 @@ impl TileWorld {
         chunk_obj
     }
 
-    pub fn tile(&self, pos: IVec2) -> u16 {
+    pub fn tile(&self, pos: IVec2) -> MaterialId {
         let (chunk, block) = decompose_world_pos(pos);
-        self.chunks.get(&chunk).map_or(0, |chunk| chunk.tile(block))
+        self.chunks
+            .get(&chunk)
+            .map_or(MaterialId::AIR, |chunk| chunk.tile(block))
     }
 
-    pub fn set_tile(self: Obj<Self>, pos: IVec2, data: u16) {
+    pub fn set_tile(self: Obj<Self>, pos: IVec2, data: MaterialId) {
         let (chunk, block) = decompose_world_pos(pos);
         self.chunk_or_create(chunk).set_tile(block, data);
     }
@@ -217,12 +235,12 @@ impl Default for TileChunk {
 }
 
 impl TileChunk {
-    pub fn tile(&self, pos: IVec2) -> u16 {
-        self.tiles[to_tile_index(pos) as usize]
+    pub fn tile(&self, pos: IVec2) -> MaterialId {
+        MaterialId(self.tiles[to_tile_index(pos) as usize])
     }
 
-    pub fn set_tile(&mut self, pos: IVec2, data: u16) {
-        self.tiles[to_tile_index(pos) as usize] = data;
+    pub fn set_tile(&mut self, pos: IVec2, data: MaterialId) {
+        self.tiles[to_tile_index(pos) as usize] = data.0;
     }
 
     fn remove_from_world(mut self: Obj<Self>) {
@@ -244,15 +262,78 @@ impl TileChunk {
     }
 }
 
+// === MaterialRegistry === //
+
+#[derive(Debug, Default)]
+pub struct MaterialRegistry {
+    name_map: FxHashMap<String, MaterialId>,
+    descriptors: Vec<Entity>,
+}
+
+impl MaterialRegistry {
+    pub fn register(&mut self, name: impl Into<String>, entity: Entity) -> MaterialId {
+        let name = name.into();
+        let did = MaterialId(self.descriptors.len() as u16);
+        self.name_map.insert(name.clone(), did);
+        self.descriptors.push(entity);
+        entity.insert(BaseMaterialDescriptor { id: did, name });
+        did
+    }
+
+    pub fn lookup(&self, id: MaterialId) -> Entity {
+        self.descriptors[id.0 as usize]
+    }
+
+    pub fn lookup_by_name(&self, name: &str) -> Option<MaterialId> {
+        self.name_map.get(name).copied()
+    }
+}
+
+#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
+pub struct MaterialId(pub u16);
+
+impl MaterialId {
+    pub const AIR: Self = MaterialId(0);
+}
+
+#[derive(Debug)]
+pub struct BaseMaterialDescriptor {
+    pub id: MaterialId,
+    pub name: String,
+}
+
 // === Systems === //
 
 pub fn build(app: &mut crate::AppBuilder) {
     app.add_unlinker::<TileWorld>();
     app.add_unlinker::<TileChunk>();
-    app.disposer.add_systems(system_cleanup_chunk);
+    app.render.add_systems(sys_render_chunks);
+    app.disposer.add_systems(sys_cleanup_chunk);
 }
 
-fn system_cleanup_chunk(
+fn sys_render_chunks(
+    mut query: Query<&ObjOwner<TileWorld>>,
+    mut rand: RandomAccess<(&TileWorld, &TileChunk)>,
+) {
+    rand.provide(|| {
+        for &ObjOwner(world) in query.iter_mut() {
+            let config = world.config();
+
+            for x in 0..100 {
+                for y in 0..100 {
+                    let material = world.tile(IVec2::new(x, y));
+
+                    if material != MaterialId::AIR {
+                        let rect = config.tile_to_actor_rect(IVec2::new(x, y));
+                        draw_rectangle(rect.x(), rect.y(), rect.w(), rect.h(), GREEN);
+                    }
+                }
+            }
+        }
+    });
+}
+
+fn sys_cleanup_chunk(
     mut query: RemovedComponents<ObjOwner<TileChunk>>,
     mut rand: RandomAccess<(&mut TileWorld, &mut TileChunk)>,
 ) {
