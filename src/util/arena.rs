@@ -502,16 +502,6 @@ impl<T: RandomComponent> Obj<T> {
         autoken::tie!('a => mut RandomComponentToken<T>);
         &mut T::arena_mut().arena[self.index].1
     }
-
-    pub fn destroy(me: Self) -> Option<T> {
-        let arena = T::arena_mut();
-        if let Some((entity, value)) = arena.arena.remove(me.index) {
-            arena.map.remove(&entity);
-            Some(value)
-        } else {
-            None
-        }
-    }
 }
 
 impl<T> Obj<T> {
@@ -546,7 +536,7 @@ impl<T: RandomComponent> DerefMut for Obj<T> {
 pub trait RandomEntityExt {
     fn insert<T: RandomComponent>(self, value: T) -> Obj<T>;
 
-    fn remove<T: RandomComponent>(self) -> Option<T>;
+    fn has<T: RandomComponent>(self) -> bool;
 
     fn try_get<T: RandomComponent>(self) -> Option<Obj<T>>;
 
@@ -558,14 +548,8 @@ impl RandomEntityExt for Entity {
         Obj::new(self, value)
     }
 
-    fn remove<T: RandomComponent>(self) -> Option<T> {
-        let arena = T::arena_mut();
-
-        if let Some(obj) = arena.map.remove(&self) {
-            Some(arena.arena.remove(obj.index).unwrap().1)
-        } else {
-            None
-        }
+    fn has<T: RandomComponent>(self) -> bool {
+        T::arena().map.contains_key(&self)
     }
 
     fn try_get<T: RandomComponent>(self) -> Option<Obj<T>> {
@@ -600,8 +584,12 @@ pub fn make_unlinker_system<T: RandomComponent>(
 ) -> impl 'static + Send + Sync + Fn(RandomAccess<&mut T>, RemovedComponents<ObjOwner<T>>) {
     |mut rand, mut removed| {
         rand.provide(|| {
+            let arena = T::arena_mut();
+
             for removed in removed.read() {
-                removed.remove::<T>();
+                if let Some(obj) = arena.map.remove(&removed) {
+                    arena.arena.remove(obj.index);
+                }
             }
         });
     }

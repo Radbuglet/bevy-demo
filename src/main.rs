@@ -18,6 +18,7 @@ pub struct AppBuilder {
     pub startup: Schedule,
     pub update: Schedule,
     pub render: Schedule,
+    pub disposer: Schedule,
     pub unlinker: Schedule,
 }
 
@@ -37,6 +38,7 @@ async fn main() {
         mut startup,
         mut update,
         mut render,
+        mut disposer,
         mut unlinker,
     } = app;
 
@@ -49,6 +51,9 @@ async fn main() {
 
         render.run(&mut world);
         render.apply_deferred(&mut world);
+
+        disposer.run(&mut world);
+        disposer.apply_deferred(&mut world);
 
         draw_text(
             &format!("Entities: {}", world.entities().len()),
