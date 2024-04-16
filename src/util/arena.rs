@@ -9,11 +9,12 @@ use std::{
     thread::LocalKey,
 };
 
-use autoken::{BorrowsMut, BorrowsRef, TokenSet};
+use autoken::{cap, BorrowsMut, BorrowsRef, CapTarget, TokenSet};
 use bevy_ecs::{
-    component::{ComponentId, Tick},
+    component::{Component, ComponentId, Tick},
     entity::Entity,
-    system::{Resource, SystemMeta, SystemParam},
+    removal_detection::RemovedComponents,
+    system::{Commands, Resource, SystemMeta, SystemParam},
     world::{unsafe_world_cell::UnsafeWorldCell, World},
 };
 use generational_arena::{Arena, Index};
@@ -38,14 +39,51 @@ impl<T> Default for RandomArena<T> {
 
 // === RandomAccess === //
 
+cap! {
+    CommandsCap<'w, 's> = Commands<'w, 's>;
+}
+
 pub struct RandomAccess<'w, 's, L: RandomComponentList> {
+    inner: RandomAccessInner<'w, 's, L>,
+    commands: Commands<'w, 's>,
+}
+
+unsafe impl<'w2, 's2, L: RandomComponentList> SystemParam for RandomAccess<'w2, 's2, L> {
+    type State = (
+        <RandomAccessInner<'w2, 's2, L> as SystemParam>::State,
+        <Commands<'w2, 's2> as SystemParam>::State,
+    );
+
+    type Item<'w, 's> = RandomAccess<'w, 's, L>;
+
+    fn init_state(world: &mut World, system_meta: &mut SystemMeta) -> Self::State {
+        (
+            RandomAccessInner::<L>::init_state(world, system_meta),
+            Commands::init_state(world, system_meta),
+        )
+    }
+
+    unsafe fn get_param<'world, 'state>(
+        state: &'state mut Self::State,
+        system_meta: &SystemMeta,
+        world: UnsafeWorldCell<'world>,
+        change_tick: Tick,
+    ) -> Self::Item<'world, 'state> {
+        RandomAccess {
+            inner: RandomAccessInner::get_param(&mut state.0, system_meta, world, change_tick),
+            commands: Commands::get_param(&mut state.1, system_meta, world, change_tick),
+        }
+    }
+}
+
+pub struct RandomAccessInner<'w, 's, L: RandomComponentList> {
     world: UnsafeWorldCell<'w>,
     state: &'s L::ParamState,
 }
 
-unsafe impl<'w2, 's2, L: RandomComponentList> SystemParam for RandomAccess<'w2, 's2, L> {
+unsafe impl<'w2, 's2, L: RandomComponentList> SystemParam for RandomAccessInner<'w2, 's2, L> {
     type State = L::ParamState;
-    type Item<'w, 's> = RandomAccess<'w, 's, L>;
+    type Item<'w, 's> = RandomAccessInner<'w, 's, L>;
 
     fn init_state(world: &mut World, system_meta: &mut SystemMeta) -> Self::State {
         // Fetch the IDs of each component used in the borrow and ensure that they don't conflict
@@ -65,7 +103,7 @@ unsafe impl<'w2, 's2, L: RandomComponentList> SystemParam for RandomAccess<'w2, 
         world: UnsafeWorldCell<'w>,
         _change_tick: Tick,
     ) -> Self::Item<'w, 's> {
-        RandomAccess {
+        RandomAccessInner {
             state: &*state,
             world,
         }
@@ -76,7 +114,7 @@ impl<'w, 's, L: RandomComponentList> RandomAccess<'w, 's, L> {
     pub fn provide<R>(&mut self, f: impl FnOnce() -> R) -> R {
         unsafe {
             autoken::absorb::<L::TokensMut, R>(|| {
-                let new_snap = L::tls_snapshot_from_world(self.state, self.world);
+                let new_snap = L::tls_snapshot_from_world(self.inner.state, self.inner.world);
                 let _guard = scopeguard::guard(L::fetch_tls_snapshot(), |snap| {
                     L::apply_tls_snapshot(&snap);
                 });
@@ -88,7 +126,7 @@ impl<'w, 's, L: RandomComponentList> RandomAccess<'w, 's, L> {
                 }
 
                 let _all = dummy::<L::TokensMut>();
-                autoken::absorb::<L::Tokens, R>(f)
+                autoken::absorb::<L::Tokens, R>(|| CommandsCap::provide(&mut self.commands, f))
             })
         }
     }
@@ -428,6 +466,9 @@ impl<T: RandomComponent> Obj<T> {
             }
             hash_map::Entry::Vacant(entry) => {
                 let obj = Self::from_index(arena.arena.insert((owner, value)));
+                CommandsCap::get_mut(|v| {
+                    v.entity(owner).insert(ObjOwner(obj));
+                });
                 entry.insert(obj);
                 obj
             }
@@ -436,6 +477,10 @@ impl<T: RandomComponent> Obj<T> {
 
     pub fn entity(self) -> Entity {
         T::arena().arena[self.index].0
+    }
+
+    pub fn is_alive(self) -> bool {
+        T::arena().arena.contains(self.index)
     }
 
     #[allow(clippy::should_implement_trait)]
@@ -450,8 +495,14 @@ impl<T: RandomComponent> Obj<T> {
         &mut T::arena_mut().arena[self.index].1
     }
 
-    pub fn destroy(me: Self) {
-        T::arena_mut().arena.remove(me.index);
+    pub fn destroy(me: Self) -> Option<T> {
+        let arena = T::arena_mut();
+        if let Some((entity, value)) = arena.arena.remove(me.index) {
+            arena.map.remove(&entity);
+            Some(value)
+        } else {
+            None
+        }
     }
 }
 
@@ -487,6 +538,8 @@ impl<T: RandomComponent> DerefMut for Obj<T> {
 pub trait RandomEntityExt {
     fn insert<T: RandomComponent>(self, value: T) -> Obj<T>;
 
+    fn remove<T: RandomComponent>(self) -> Option<T>;
+
     fn try_get<T: RandomComponent>(self) -> Option<Obj<T>>;
 
     fn get<T: RandomComponent>(self) -> Obj<T>;
@@ -497,11 +550,51 @@ impl RandomEntityExt for Entity {
         Obj::new(self, value)
     }
 
+    fn remove<T: RandomComponent>(self) -> Option<T> {
+        let arena = T::arena_mut();
+
+        if let Some(obj) = arena.map.remove(&self) {
+            Some(arena.arena.remove(obj.index).unwrap().1)
+        } else {
+            None
+        }
+    }
+
     fn try_get<T: RandomComponent>(self) -> Option<Obj<T>> {
         T::arena().map.get(&self).copied()
     }
 
     fn get<T: RandomComponent>(self) -> Obj<T> {
         self.try_get::<T>().unwrap()
+    }
+}
+
+// === System Link === //
+
+#[derive(Component)]
+pub struct ObjOwner<T>(pub Obj<T>);
+
+impl<T> fmt::Debug for ObjOwner<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("ObjOwner").field(&self.0).finish()
+    }
+}
+
+impl<T> Copy for ObjOwner<T> {}
+
+impl<T> Clone for ObjOwner<T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+pub fn make_unlinker_system<T: RandomComponent>(
+) -> impl 'static + Send + Sync + Fn(RandomAccess<&mut T>, RemovedComponents<ObjOwner<T>>) {
+    |mut rand, mut removed| {
+        rand.provide(|| {
+            for removed in removed.read() {
+                removed.remove::<T>();
+            }
+        });
     }
 }
