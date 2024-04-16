@@ -11,6 +11,7 @@ use std::{
 
 use autoken::{cap, BorrowsMut, BorrowsRef, CapTarget, TokenSet};
 use bevy_ecs::{
+    bundle::Bundle,
     component::{Component, ComponentId, Tick},
     entity::Entity,
     removal_detection::RemovedComponents,
@@ -62,6 +63,13 @@ unsafe impl<'w2, 's2, L: RandomComponentList> SystemParam for RandomAccess<'w2, 
             Commands::init_state(world, system_meta),
         )
     }
+
+    fn apply(state: &mut Self::State, system_meta: &SystemMeta, world: &mut World) {
+        RandomAccessInner::<L>::apply(&mut state.0, system_meta, world);
+        Commands::apply(&mut state.1, system_meta, world);
+    }
+
+    // TODO: Do we also have to handle new archetypes?
 
     unsafe fn get_param<'world, 'state>(
         state: &'state mut Self::State,
@@ -597,4 +605,12 @@ pub fn make_unlinker_system<T: RandomComponent>(
             }
         });
     }
+}
+
+pub fn spawn_entity(bundle: impl Bundle) -> Entity {
+    CommandsCap::get_mut(|v| v.spawn(bundle).id()).0
+}
+
+pub fn despawn_entity(entity: Entity) {
+    CommandsCap::get_mut(|v| v.entity(entity).despawn());
 }

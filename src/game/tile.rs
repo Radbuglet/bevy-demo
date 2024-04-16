@@ -1,21 +1,22 @@
-use bevy_ecs::system::{Commands, Query};
+use bevy_ecs::system::Query;
 use macroquad::math::IVec2;
 use rustc_hash::FxHashMap;
 
 use crate::{
     random_component,
-    util::arena::{Obj, ObjOwner, RandomAccess, RandomEntityExt},
+    util::arena::{despawn_entity, spawn_entity, Obj, ObjOwner, RandomAccess, RandomEntityExt},
 };
 
 #[derive(Debug, Default)]
 pub struct WorldTile {
-    tiles: FxHashMap<IVec2, Obj<ChunkTile>>,
+    chunks: FxHashMap<IVec2, Obj<ChunkTile>>,
 }
 
 impl WorldTile {
     pub fn add(&mut self, pos: IVec2, mut chunk: Obj<ChunkTile>) {
         chunk.pos = pos;
         chunk.neighbors[3] = Some(chunk);
+        self.chunks.insert(pos, chunk);
     }
 }
 
@@ -47,13 +48,15 @@ pub fn build(app: &mut crate::AppBuilder) {
     app.add_unlinker::<ChunkTile>();
 }
 
-fn system_build_world(mut cmd: Commands, mut rand: RandomAccess<(&mut WorldTile, &mut ChunkTile)>) {
+fn system_build_world(mut rand: RandomAccess<(&mut WorldTile, &mut ChunkTile)>) {
     rand.provide(|| {
-        let world = cmd.spawn(()).id();
+        let world = spawn_entity(());
         let mut world_data = world.insert(WorldTile::default());
 
-        let chunk = cmd.spawn(()).id();
+        let chunk = spawn_entity(());
         world_data.add(IVec2::ZERO, chunk.insert(ChunkTile::default()));
+
+        despawn_entity(chunk);
     });
 }
 
@@ -63,8 +66,7 @@ fn system_test_world(
 ) {
     rand.provide(|| {
         for &ObjOwner(world) in query.iter_mut() {
-            dbg!(world);
-            for val in world.tiles.values() {
+            for val in world.chunks.values() {
                 dbg!(val, Obj::is_alive(*val));
             }
         }
