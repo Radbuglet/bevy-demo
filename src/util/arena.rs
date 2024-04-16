@@ -2,6 +2,7 @@
 
 use std::{
     cell::Cell,
+    collections::hash_map,
     fmt,
     marker::PhantomData,
     ops::{Deref, DerefMut},
@@ -11,22 +12,26 @@ use std::{
 use autoken::{BorrowsMut, BorrowsRef, TokenSet};
 use bevy_ecs::{
     component::{ComponentId, Tick},
+    entity::Entity,
     system::{Resource, SystemMeta, SystemParam},
     world::{unsafe_world_cell::UnsafeWorldCell, World},
 };
 use generational_arena::{Arena, Index};
+use rustc_hash::FxHashMap;
 
 // === RandomArena === //
 
 #[derive(Debug, Resource)]
 pub struct RandomArena<T> {
-    arena: Arena<T>,
+    arena: Arena<(Entity, T)>,
+    map: FxHashMap<Entity, Obj<T>>,
 }
 
 impl<T> Default for RandomArena<T> {
     fn default() -> Self {
         Self {
-            arena: Default::default(),
+            arena: Arena::default(),
+            map: FxHashMap::default(),
         }
     }
 }
@@ -413,24 +418,40 @@ impl<T> Clone for Obj<T> {
 }
 
 impl<T: RandomComponent> Obj<T> {
-    pub fn new(value: T) -> Self {
-        Self::from_index(T::arena_mut().arena.insert(value))
+    pub fn new(owner: Entity, value: T) -> Self {
+        let arena = T::arena_mut();
+        match arena.map.entry(owner) {
+            hash_map::Entry::Occupied(entry) => {
+                let obj = *entry.into_mut();
+                arena.arena[obj.index] = (owner, value);
+                obj
+            }
+            hash_map::Entry::Vacant(entry) => {
+                let obj = Self::from_index(arena.arena.insert((owner, value)));
+                entry.insert(obj);
+                obj
+            }
+        }
     }
 
-    pub fn destroy(me: Self) {
-        T::arena_mut().arena.remove(me.index);
+    pub fn entity(self) -> Entity {
+        T::arena().arena[self.index].0
     }
 
     #[allow(clippy::should_implement_trait)]
     pub fn deref<'a>(self) -> &'a T {
         autoken::tie!('a => ref RandomComponentToken<T>);
-        &T::arena().arena[self.index]
+        &T::arena().arena[self.index].1
     }
 
     #[allow(clippy::should_implement_trait)]
     pub fn deref_mut<'a>(self) -> &'a mut T {
         autoken::tie!('a => mut RandomComponentToken<T>);
-        &mut T::arena_mut().arena[self.index]
+        &mut T::arena_mut().arena[self.index].1
+    }
+
+    pub fn destroy(me: Self) {
+        T::arena_mut().arena.remove(me.index);
     }
 }
 
@@ -460,5 +481,27 @@ impl<T: RandomComponent> DerefMut for Obj<T> {
     fn deref_mut<'a>(&'a mut self) -> &'a mut Self::Target {
         autoken::tie!('a => mut RandomComponentToken<T>);
         (*self).deref_mut()
+    }
+}
+
+pub trait RandomEntityExt {
+    fn insert<T: RandomComponent>(self, value: T) -> Obj<T>;
+
+    fn try_get<T: RandomComponent>(self) -> Option<Obj<T>>;
+
+    fn get<T: RandomComponent>(self) -> Obj<T>;
+}
+
+impl RandomEntityExt for Entity {
+    fn insert<T: RandomComponent>(self, value: T) -> Obj<T> {
+        Obj::new(self, value)
+    }
+
+    fn try_get<T: RandomComponent>(self) -> Option<Obj<T>> {
+        T::arena().map.get(&self).copied()
+    }
+
+    fn get<T: RandomComponent>(self) -> Obj<T> {
+        self.try_get::<T>().unwrap()
     }
 }

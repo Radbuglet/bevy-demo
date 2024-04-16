@@ -1,26 +1,41 @@
+use bevy_ecs::system::Commands;
+use macroquad::math::IVec2;
+use rustc_hash::FxHashMap;
+
 use crate::{
     random_component,
-    util::arena::{Obj, RandomAccess},
+    util::arena::{Obj, RandomAccess, RandomEntityExt},
 };
 
-pub struct MyDemo {
-    counter: u32,
+#[derive(Debug, Default)]
+pub struct WorldTile {
+    tiles: FxHashMap<IVec2, Obj<ChunkTile>>,
 }
 
-random_component!(MyDemo);
+impl WorldTile {
+    pub fn add(&mut self, pos: IVec2, mut chunk: Obj<ChunkTile>) {
+        chunk.pos = pos;
+        chunk.neighbors[3] = Some(chunk);
+    }
+}
+
+#[derive(Debug)]
+pub struct ChunkTile {
+    pos: IVec2,
+    tiles: Box<[u16; 16 * 16]>,
+    neighbors: [Option<Obj<ChunkTile>>; 4],
+}
+
+random_component!(WorldTile, ChunkTile);
+
+// === Systems === //
 
 pub fn build(app: &mut crate::AppBuilder) {
-    app.update.add_systems(system_do_stuff);
+    app.startup.add_systems(system_build_world);
 }
 
-pub fn system_do_stuff(mut rand: RandomAccess<&mut MyDemo>) {
+fn system_build_world(mut cmd: Commands, mut rand: RandomAccess<&mut WorldTile>) {
     rand.provide(|| {
-        let mut handle = Obj::new(MyDemo { counter: 4 });
-        dbg!(handle);
-
-        handle.counter += 1;
-        dbg!(handle.counter);
-
-        Obj::destroy(handle);
+        let mut world = cmd.spawn(()).id().insert(WorldTile::default());
     });
 }

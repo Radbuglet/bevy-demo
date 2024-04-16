@@ -15,7 +15,6 @@ pub struct AppBuilder {
     pub startup: Schedule,
     pub update: Schedule,
     pub render: Schedule,
-    pub unlink: Schedule,
 }
 
 #[macroquad::main("Demo App")]
@@ -28,7 +27,6 @@ async fn main() {
         mut startup,
         mut update,
         mut render,
-        mut unlink,
     } = app;
 
     startup.run(&mut world);
@@ -36,7 +34,6 @@ async fn main() {
     while !is_quit_requested() && !is_key_pressed(KeyCode::Escape) {
         update.run(&mut world);
         render.run(&mut world);
-        unlink.run(&mut world);
         next_frame().await;
     }
 }
