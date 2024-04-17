@@ -6,7 +6,10 @@ use crate::{
     util::arena::{ObjOwner, RandomAccess},
 };
 
-use super::data::{MaterialDescriptorCache, MaterialId, MaterialRegistry, TileChunk, TileWorld};
+use super::{
+    data::{TileChunk, TileWorld},
+    material::{MaterialCache, MaterialId, MaterialRegistry},
+};
 
 // === RenderableWorld === //
 
@@ -14,7 +17,7 @@ random_component!(SolidTileMaterial);
 
 #[derive(Debug, Default, Component)]
 pub struct RenderableWorld {
-    cache: MaterialDescriptorCache<SolidTileMaterial>,
+    cache: MaterialCache<SolidTileMaterial>,
 }
 
 #[derive(Debug)]
@@ -25,6 +28,8 @@ pub struct SolidTileMaterial {
 // === Systems === //
 
 pub fn build(app: &mut crate::AppBuilder) {
+    app.add_unlinker::<SolidTileMaterial>();
+
     app.render.add_systems(sys_render_chunks);
 }
 

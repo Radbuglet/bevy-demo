@@ -11,7 +11,8 @@ use macroquad::{
 
 use crate::{
     game::tile::{
-        data::{BaseMaterialDescriptor, MaterialRegistry, TileChunk, TileLayerConfig, TileWorld},
+        data::{TileChunk, TileLayerConfig, TileWorld},
+        material::{BaseMaterialDescriptor, MaterialRegistry},
         render::{RenderableWorld, SolidTileMaterial},
     },
     util::arena::{spawn_entity, RandomAccess, RandomEntityExt},

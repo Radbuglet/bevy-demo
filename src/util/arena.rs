@@ -539,8 +539,6 @@ pub trait RandomEntityExt {
 
     fn remove<T: RandomComponent>(self);
 
-    fn send<E: Event>(self, event: E);
-
     fn has<T: RandomComponent>(self) -> bool;
 
     fn try_get<T: RandomComponent>(self) -> Option<Obj<T>>;
@@ -556,15 +554,6 @@ impl RandomEntityExt for Entity {
     fn remove<T: RandomComponent>(self) {
         CommandsCap::get_mut(|v| {
             v.entity(self).remove::<ObjOwner<T>>();
-        });
-    }
-
-    fn send<E: Event>(self, event: E) {
-        CommandsCap::get_mut(|v| {
-            // TODO: Do something more efficient
-            v.add(|world: &mut World| {
-                world.send_event(event);
-            });
         });
     }
 
@@ -621,4 +610,13 @@ pub fn spawn_entity(bundle: impl Bundle) -> Entity {
 
 pub fn despawn_entity(entity: Entity) {
     CommandsCap::get_mut(|v| v.entity(entity).despawn());
+}
+
+pub fn send_event<E: Event>(event: E) {
+    CommandsCap::get_mut(|v| {
+        // TODO: Do something more efficient
+        v.add(|world: &mut World| {
+            world.send_event(event);
+        });
+    });
 }
