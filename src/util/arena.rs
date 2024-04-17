@@ -14,7 +14,7 @@ use bevy_ecs::{
     bundle::Bundle,
     component::{Component, ComponentId, Tick},
     entity::Entity,
-    event::Event,
+    event::{Event, Events},
     removal_detection::RemovedComponents,
     system::{Commands, Resource, SystemMeta, SystemParam},
     world::{unsafe_world_cell::UnsafeWorldCell, World},
@@ -45,12 +45,12 @@ cap! {
     CommandsCap<'w, 's> = Commands<'w, 's>;
 }
 
-pub struct RandomAccess<'w, 's, L: RandomComponentList> {
+pub struct RandomAccess<'w, 's, L: RandomResourceList> {
     inner: RandomAccessInner<'w, 's, L>,
     commands: Commands<'w, 's>,
 }
 
-unsafe impl<'w2, 's2, L: RandomComponentList> SystemParam for RandomAccess<'w2, 's2, L> {
+unsafe impl<'w2, 's2, L: RandomResourceList> SystemParam for RandomAccess<'w2, 's2, L> {
     type State = (
         <RandomAccessInner<'w2, 's2, L> as SystemParam>::State,
         <Commands<'w2, 's2> as SystemParam>::State,
@@ -85,12 +85,12 @@ unsafe impl<'w2, 's2, L: RandomComponentList> SystemParam for RandomAccess<'w2, 
     }
 }
 
-pub struct RandomAccessInner<'w, 's, L: RandomComponentList> {
+pub struct RandomAccessInner<'w, 's, L: RandomResourceList> {
     world: UnsafeWorldCell<'w>,
     state: &'s L::ParamState,
 }
 
-unsafe impl<'w2, 's2, L: RandomComponentList> SystemParam for RandomAccessInner<'w2, 's2, L> {
+unsafe impl<'w2, 's2, L: RandomResourceList> SystemParam for RandomAccessInner<'w2, 's2, L> {
     type State = L::ParamState;
     type Item<'w, 's> = RandomAccessInner<'w, 's, L>;
 
@@ -119,7 +119,7 @@ unsafe impl<'w2, 's2, L: RandomComponentList> SystemParam for RandomAccessInner<
     }
 }
 
-impl<'w, 's, L: RandomComponentList> RandomAccess<'w, 's, L> {
+impl<'w, 's, L: RandomResourceList> RandomAccess<'w, 's, L> {
     pub fn provide<R>(&mut self, f: impl FnOnce() -> R) -> R {
         unsafe {
             autoken::absorb::<L::TokensMut, R>(|| {
@@ -143,13 +143,13 @@ impl<'w, 's, L: RandomComponentList> RandomAccess<'w, 's, L> {
 
 // === RandomComponentList === //
 
-pub type CompBorrowsRef<'a, T> = BorrowsRef<'a, CompTokensOf<T>>;
+pub type RandBorrowsRef<'a, T> = BorrowsRef<'a, RandTokensOf<T>>;
 
-pub type CompBorrowsMut<'a, T> = BorrowsMut<'a, CompTokensOf<T>>;
+pub type RandBorrowsMut<'a, T> = BorrowsMut<'a, RandTokensOf<T>>;
 
-pub type CompTokensOf<T> = <T as RandomComponentList>::Tokens;
+pub type RandTokensOf<T> = <T as RandomResourceList>::Tokens;
 
-pub unsafe trait RandomComponentList {
+pub unsafe trait RandomResourceList {
     /// The set of tokens absorbed by the list.
     type Tokens: TokenSet;
 
@@ -185,7 +185,7 @@ pub unsafe trait RandomComponentList {
     unsafe fn apply_tls_snapshot(snap: &Self::TlsSnapshot);
 }
 
-unsafe impl<T: RandomComponent> RandomComponentList for &'_ T {
+unsafe impl<T: RandomComponent> RandomResourceList for &'_ T {
     type Tokens = autoken::Ref<RandomComponentToken<T>>;
     type TokensMut = autoken::Mut<RandomComponentToken<T>>;
     type ParamState = ComponentId;
@@ -250,7 +250,7 @@ unsafe impl<T: RandomComponent> RandomComponentList for &'_ T {
     }
 }
 
-unsafe impl<T: RandomComponent> RandomComponentList for &'_ mut T {
+unsafe impl<T: RandomComponent> RandomResourceList for &'_ mut T {
     type Tokens = autoken::Mut<RandomComponentToken<T>>;
     type TokensMut = autoken::Mut<RandomComponentToken<T>>;
     type ParamState = ComponentId;
@@ -315,7 +315,75 @@ unsafe impl<T: RandomComponent> RandomComponentList for &'_ mut T {
     }
 }
 
-unsafe impl RandomComponentList for () {
+pub struct SendsEvent<T>(PhantomData<fn() -> T>);
+
+unsafe impl<T: RandomEvent> RandomResourceList for SendsEvent<T> {
+    type Tokens = autoken::Mut<RandomEventToken<T>>;
+    type TokensMut = autoken::Mut<RandomEventToken<T>>;
+    type ParamState = ComponentId;
+    type TlsSnapshot = *mut Events<T>;
+
+    fn get_param_state(world: &mut World, system_meta: &mut SystemMeta) -> Self::ParamState {
+        // TODO: Don't initialize the actual value.
+        let component_id = world.init_resource::<Events<T>>();
+
+        // TODO
+        // let combined_access = system_meta.component_access_set.combined_access();
+        // assert!(
+        //     !combined_access.has_write(component_id),
+        //     "error[B0002]: Res<{}> in system {} conflicts with a previous ResMut<{0}> access. Consider removing the duplicate access.",
+        //     std::any::type_name::<T>(),
+        //     system_meta.name(),
+        // );
+
+        component_id
+    }
+
+    fn update_access_sets(
+        state: &Self::ParamState,
+        world: &mut World,
+        system_meta: &mut SystemMeta,
+    ) {
+        // TODO
+        //         system_meta
+        //             .component_access_set
+        //             .add_unfiltered_read(component_id);
+        //
+        //         let archetype_component_id = world
+        //             .get_resource_archetype_component_id(component_id)
+        //             .unwrap();
+        //
+        //         system_meta
+        //             .archetype_component_access
+        //             .add_read(archetype_component_id);
+    }
+
+    fn fetch_tls_snapshot() -> Self::TlsSnapshot {
+        unsafe { T::tls().get() }
+    }
+
+    unsafe fn tls_snapshot_from_world(
+        &state: &Self::ParamState,
+        world: UnsafeWorldCell<'_>,
+    ) -> Self::TlsSnapshot {
+        world
+            .get_resource_by_id(state)
+            .unwrap_or_else(|| {
+                panic!(
+                    "Resource requested does not exist: {}",
+                    std::any::type_name::<T>()
+                )
+            })
+            .as_ptr()
+            .cast()
+    }
+
+    unsafe fn apply_tls_snapshot(&snap: &Self::TlsSnapshot) {
+        unsafe { T::tls().set(snap) }
+    }
+}
+
+unsafe impl RandomResourceList for () {
     type Tokens = ();
     type TokensMut = ();
     type ParamState = ();
@@ -341,10 +409,10 @@ unsafe impl RandomComponentList for () {
     unsafe fn apply_tls_snapshot(_snap: &Self::TlsSnapshot) {}
 }
 
-macro_rules! impl_random_component_list {
+macro_rules! impl_random_resource_list {
     () => {};
     ($first:ident $($rest:ident)*) => {
-        unsafe impl<$first: RandomComponentList $(, $rest: RandomComponentList)*> RandomComponentList for ($first, $($rest,)*) {
+        unsafe impl<$first: RandomResourceList $(, $rest: RandomResourceList)*> RandomResourceList for ($first, $($rest,)*) {
             type Tokens = ($first::Tokens, $($rest::Tokens,)*);
             type TokensMut = ($first::TokensMut, $($rest::TokensMut,)*);
             type ParamState = ($first::ParamState, $($rest::ParamState,)*);
@@ -380,11 +448,11 @@ macro_rules! impl_random_component_list {
             }
         }
 
-        impl_random_component_list!($($rest)*);
+        impl_random_resource_list!($($rest)*);
     };
 }
 
-impl_random_component_list!(T1 T2 T3 T4 T5 T6 T7 T8 T9 T10 T11 T12);
+impl_random_resource_list!(T1 T2 T3 T4 T5 T6 T7 T8 T9 T10 T11 T12);
 
 // === RandomComponent === //
 
@@ -429,6 +497,60 @@ macro_rules! random_component {
                     > = const {
                         $crate::util::arena::random_component_internals::Cell::new(
                             $crate::util::arena::random_component_internals::null_mut(),
+                        )
+                    };
+                }
+
+                &TLS
+            }
+        }
+    )*};
+}
+
+// === RandomEvent === //
+
+pub struct RandomEventToken<T> {
+    _ty: PhantomData<fn() -> T>,
+}
+
+pub unsafe trait RandomEvent: 'static + Sized + Send + Sync + Event {
+    unsafe fn tls() -> &'static LocalKey<Cell<*mut Events<Self>>>;
+
+    fn events<'a>() -> &'a Events<Self> {
+        autoken::tie!('a => ref RandomEventToken<Self>);
+        unsafe { &*Self::tls().get() }
+    }
+
+    fn events_mut<'a>() -> &'a mut Events<Self> {
+        autoken::tie!('a => mut RandomEventToken<Self>);
+        unsafe { &mut *Self::tls().get() }
+    }
+}
+
+#[doc(hidden)]
+pub mod random_event_internals {
+    pub use {
+        super::RandomEvent,
+        bevy_ecs::event::Events,
+        std::{cell::Cell, ptr::null_mut, thread::LocalKey, thread_local},
+    };
+}
+
+#[macro_export]
+macro_rules! random_event {
+    ($($ty:ty),*$(,)?) => {$(
+        unsafe impl $crate::util::arena::random_event_internals::RandomEvent for $ty {
+            unsafe fn tls() -> &'static $crate::util::arena::random_event_internals::LocalKey<
+                $crate::util::arena::random_event_internals::Cell<
+                    *mut $crate::util::arena::random_event_internals::Events<Self>,
+                >>
+            {
+                $crate::util::arena::random_event_internals::thread_local! {
+                    static TLS: $crate::util::arena::random_event_internals::Cell<
+                        *mut $crate::util::arena::random_event_internals::Events<$ty>,
+                    > = const {
+                        $crate::util::arena::random_event_internals::Cell::new(
+                            $crate::util::arena::random_event_internals::null_mut(),
                         )
                     };
                 }
@@ -612,11 +734,6 @@ pub fn despawn_entity(entity: Entity) {
     CommandsCap::get_mut(|v| v.entity(entity).despawn());
 }
 
-pub fn send_event<E: Event>(event: E) {
-    CommandsCap::get_mut(|v| {
-        // TODO: Do something more efficient
-        v.add(|world: &mut World| {
-            world.send_event(event);
-        });
-    });
+pub fn send_event<E: RandomEvent>(event: E) {
+    E::events_mut().send(event);
 }

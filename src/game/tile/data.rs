@@ -9,7 +9,7 @@ use crate::{
         glam::{AaLine, Axis2, Sign, TileFace, Vec2Ext},
         scalar::ilerp_f32,
     },
-    random_component,
+    random_component, random_event,
     util::arena::{send_event, spawn_entity, Obj, ObjOwner, RandomAccess, RandomEntityExt},
 };
 
@@ -18,6 +18,7 @@ use super::material::MaterialId;
 // === Definition === //
 
 random_component!(TileWorld, TileChunk);
+random_event!(WorldCreatedChunk);
 
 #[derive(Event)]
 pub struct WorldCreatedChunk {

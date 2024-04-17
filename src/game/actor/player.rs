@@ -11,11 +11,11 @@ use macroquad::{
 
 use crate::{
     game::tile::{
-        data::{TileChunk, TileLayerConfig, TileWorld},
+        data::{TileChunk, TileLayerConfig, TileWorld, WorldCreatedChunk},
         material::{BaseMaterialDescriptor, MaterialRegistry},
         render::{RenderableWorld, SolidTileMaterial},
     },
-    util::arena::{spawn_entity, RandomAccess, RandomEntityExt},
+    util::arena::{spawn_entity, RandomAccess, RandomEntityExt, SendsEvent},
 };
 
 #[derive(Component)]
@@ -82,6 +82,7 @@ fn sys_update_kinematics(
         &mut TileChunk,
         &mut MaterialRegistry,
         &mut BaseMaterialDescriptor,
+        SendsEvent<WorldCreatedChunk>,
     )>,
 ) {
     rand.provide(|| {
