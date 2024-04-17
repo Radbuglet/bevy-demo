@@ -586,6 +586,14 @@ impl<T> Clone for Obj<T> {
     }
 }
 
+impl<T> Eq for Obj<T> {}
+
+impl<T> PartialEq for Obj<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.index == other.index
+    }
+}
+
 impl<T: RandomComponent> Obj<T> {
     fn new(owner: Entity, value: T) -> Self {
         let arena = T::arena_mut();

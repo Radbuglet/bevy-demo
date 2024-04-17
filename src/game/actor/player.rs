@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 
-use bevy_ecs::{component::Component, entity::Entity, schedule::IntoSystemConfigs, system::Query};
+use bevy_ecs::{component::Component, schedule::IntoSystemConfigs, system::Query};
 use macroquad::{
     color::{Color, DARKPURPLE, GREEN, RED},
     input::{is_key_down, KeyCode},
@@ -10,10 +10,14 @@ use macroquad::{
 };
 
 use crate::{
-    game::tile::{
-        data::{TileChunk, TileLayerConfig, TileWorld, WorldCreatedChunk},
-        material::{BaseMaterialDescriptor, MaterialRegistry},
-        render::{RenderableWorld, SolidTileMaterial},
+    game::{
+        math::aabb::Aabb,
+        tile::{
+            collider::{sys_add_collider, Collider, InsideWorld},
+            data::{TileChunk, TileLayerConfig, TileWorld, WorldCreatedChunk},
+            material::{BaseMaterialDescriptor, MaterialRegistry},
+            render::{RenderableWorld, SolidTileMaterial},
+        },
     },
     util::arena::{spawn_entity, RandomAccess, RandomEntityExt, SendsEvent},
 };
@@ -26,7 +30,6 @@ pub struct Vel(Vec2);
 
 #[derive(Component)]
 pub struct Player {
-    world: Entity,
     trail: VecDeque<Vec2>,
 }
 
@@ -35,7 +38,9 @@ pub fn build(app: &mut crate::AppBuilder) {
 
     app.update.add_systems((
         sys_handle_controls,
-        sys_update_kinematics.after(sys_handle_controls),
+        sys_update_kinematics
+            .after(sys_handle_controls)
+            .before(sys_add_collider),
     ));
 
     app.render.add_systems(sys_render_players);
@@ -51,9 +56,9 @@ fn sys_create_local_player(
 ) {
     rand.provide(|| {
         let world = spawn_entity(RenderableWorld::default());
-        world.insert(TileWorld::new(TileLayerConfig {
+        let world_obj = world.insert(TileWorld::new(TileLayerConfig {
             offset: Vec2::ZERO,
-            size: 50.,
+            size: 10.,
         }));
 
         let mut registry = world.insert(MaterialRegistry::default());
@@ -67,8 +72,9 @@ fn sys_create_local_player(
         spawn_entity((
             Pos(Vec2::ZERO),
             Vel(Vec2::ONE),
+            InsideWorld(world_obj),
+            Collider(Aabb::ZERO_TO_ONE),
             Player {
-                world,
                 trail: VecDeque::new(),
             },
         ));
@@ -76,7 +82,7 @@ fn sys_create_local_player(
 }
 
 fn sys_update_kinematics(
-    mut query: Query<(&mut Pos, &mut Vel, &mut Player)>,
+    mut query: Query<(&InsideWorld, &mut Player, &mut Collider, &mut Pos, &mut Vel)>,
     mut rand: RandomAccess<(
         &mut TileWorld,
         &mut TileChunk,
@@ -86,21 +92,23 @@ fn sys_update_kinematics(
     )>,
 ) {
     rand.provide(|| {
-        for (mut pos, mut vel, mut player) in query.iter_mut() {
+        for (&InsideWorld(world_data), mut player, mut collider, mut pos, mut vel) in
+            query.iter_mut()
+        {
             pos.0 += vel.0;
             vel.0 *= 0.98;
 
             pos.0.x = pos.0.x.rem_euclid(screen_width());
             pos.0.y = pos.0.y.rem_euclid(screen_height());
 
+            collider.0 = Aabb::new_centered(pos.0, Vec2::ONE);
+
             player.trail.push_front(pos.0);
             if player.trail.len() > 100 {
                 player.trail.pop_back();
             }
 
-            let world = player.world;
-            let world_data = world.get::<TileWorld>();
-            let world_mats = world.get::<MaterialRegistry>();
+            let world_mats = world_data.entity().get::<MaterialRegistry>();
             world_data.set_tile(
                 world_data.config().actor_to_tile(pos.0),
                 world_mats.lookup_by_name("game:grass").unwrap(),

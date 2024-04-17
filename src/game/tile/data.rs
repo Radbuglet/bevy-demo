@@ -35,6 +35,9 @@ pub struct TileLayerConfig {
 }
 
 impl TileLayerConfig {
+    pub const CHUNK_EDGE: i32 = 16;
+    pub const CHUNK_AREA: i32 = Self::CHUNK_EDGE * Self::CHUNK_EDGE;
+
     pub fn from_size(size: f32) -> Self {
         Self {
             size,
@@ -66,6 +69,29 @@ impl TileLayerConfig {
             Vec2::new(x as f32, y as f32) * self.size,
             Vec2::splat(self.size),
         )
+    }
+
+    pub fn decompose_world_pos(v: IVec2) -> (IVec2, IVec2) {
+        let IVec2 { x, y } = v;
+
+        (
+            IVec2::new(
+                x.div_euclid(Self::CHUNK_EDGE),
+                y.div_euclid(Self::CHUNK_EDGE),
+            ),
+            IVec2::new(
+                x.rem_euclid(Self::CHUNK_EDGE),
+                y.rem_euclid(Self::CHUNK_EDGE),
+            ),
+        )
+    }
+
+    pub fn to_tile_index(v: IVec2) -> i32 {
+        v.y * Self::CHUNK_EDGE + v.x
+    }
+
+    pub fn actor_to_decomposed(&self, actor: Vec2) -> (IVec2, IVec2) {
+        Self::decompose_world_pos(self.actor_to_tile(actor))
     }
 
     pub fn tile_edge_line(&self, tile: IVec2, face: TileFace) -> AaLine {
@@ -129,24 +155,6 @@ pub struct RayIntersection {
     pub dist: f32,
 }
 
-// === Tile Math === //
-
-const CHUNK_EDGE: i32 = 16;
-const CHUNK_AREA: i32 = CHUNK_EDGE * CHUNK_EDGE;
-
-fn decompose_world_pos(v: IVec2) -> (IVec2, IVec2) {
-    let IVec2 { x, y } = v;
-
-    (
-        IVec2::new(x.div_euclid(CHUNK_EDGE), y.div_euclid(CHUNK_EDGE)),
-        IVec2::new(x.rem_euclid(CHUNK_EDGE), y.rem_euclid(CHUNK_EDGE)),
-    )
-}
-
-fn to_tile_index(v: IVec2) -> i32 {
-    v.y * CHUNK_EDGE + v.x
-}
-
 // === WorldTile === //
 
 #[derive(Debug)]
@@ -199,14 +207,14 @@ impl TileWorld {
     }
 
     pub fn tile(&self, pos: IVec2) -> MaterialId {
-        let (chunk, block) = decompose_world_pos(pos);
+        let (chunk, block) = TileLayerConfig::decompose_world_pos(pos);
         self.chunks
             .get(&chunk)
             .map_or(MaterialId::AIR, |chunk| chunk.tile(block))
     }
 
     pub fn set_tile(self: Obj<Self>, pos: IVec2, data: MaterialId) {
-        let (chunk, block) = decompose_world_pos(pos);
+        let (chunk, block) = TileLayerConfig::decompose_world_pos(pos);
         self.chunk_or_create(chunk).set_tile(block, data);
     }
 }
@@ -218,7 +226,7 @@ pub struct TileChunk {
     world: Option<Obj<TileWorld>>,
     neighbors: [Option<Obj<TileChunk>>; 4],
     pos: IVec2,
-    tiles: Box<[u16; CHUNK_AREA as usize]>,
+    tiles: Box<[u16; TileLayerConfig::CHUNK_AREA as usize]>,
 }
 
 impl Default for TileChunk {
@@ -227,18 +235,22 @@ impl Default for TileChunk {
             world: None,
             neighbors: [None; 4],
             pos: IVec2::ZERO,
-            tiles: Box::new([0; CHUNK_AREA as usize]),
+            tiles: Box::new([0; TileLayerConfig::CHUNK_AREA as usize]),
         }
     }
 }
 
 impl TileChunk {
+    pub fn pos(&self) -> IVec2 {
+        self.pos
+    }
+
     pub fn tile(&self, pos: IVec2) -> MaterialId {
-        MaterialId(self.tiles[to_tile_index(pos) as usize])
+        MaterialId(self.tiles[TileLayerConfig::to_tile_index(pos) as usize])
     }
 
     pub fn set_tile(&mut self, pos: IVec2, data: MaterialId) {
-        self.tiles[to_tile_index(pos) as usize] = data.0;
+        self.tiles[TileLayerConfig::to_tile_index(pos) as usize] = data.0;
     }
 
     fn remove_from_world(mut self: Obj<Self>) {
