@@ -10,7 +10,7 @@ use macroquad::{
     text::draw_text,
     window::next_frame,
 };
-use util::arena::{make_unlinker_system, RandomComponent};
+use util::arena::{make_unlinker_system, RandomArena, RandomComponent};
 
 pub mod game;
 pub mod util;
@@ -49,6 +49,7 @@ impl Default for AppBuilder {
 impl AppBuilder {
     pub fn add_unlinker<T: RandomComponent>(&mut self) {
         self.unlinker.add_systems(make_unlinker_system::<T>());
+        self.world.init_resource::<RandomArena<T>>();
     }
 }
 

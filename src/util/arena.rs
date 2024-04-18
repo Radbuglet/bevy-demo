@@ -16,7 +16,7 @@ use bevy_ecs::{
     entity::Entity,
     event::{Event, Events},
     removal_detection::RemovedComponents,
-    system::{Commands, Resource, SystemMeta, SystemParam},
+    system::{Commands, Res, ResMut, Resource, SystemMeta, SystemParam},
     world::{unsafe_world_cell::UnsafeWorldCell, World},
 };
 use generational_arena::{Arena, Index};
@@ -192,9 +192,9 @@ unsafe impl<T: RandomComponent> RandomResourceList for &'_ T {
     type TlsSnapshot = *mut RandomArena<T>;
 
     fn get_param_state(world: &mut World, system_meta: &mut SystemMeta) -> Self::ParamState {
-        let component_id = world.init_resource::<RandomArena<T>>();
-
-        // TODO
+        // TODO: Use an alias-permitting technique
+        // let component_id = world.init_resource::<RandomArena<T>>();
+        //
         // let combined_access = system_meta.component_access_set.combined_access();
         // assert!(
         //     !combined_access.has_write(component_id),
@@ -202,8 +202,10 @@ unsafe impl<T: RandomComponent> RandomResourceList for &'_ T {
         //     std::any::type_name::<T>(),
         //     system_meta.name(),
         // );
+        //
+        // component_id
 
-        component_id
+        <Res<RandomArena<T>> as SystemParam>::init_state(world, system_meta)
     }
 
     fn update_access_sets(
@@ -211,18 +213,20 @@ unsafe impl<T: RandomComponent> RandomResourceList for &'_ T {
         world: &mut World,
         system_meta: &mut SystemMeta,
     ) {
-        // TODO
-        //         system_meta
-        //             .component_access_set
-        //             .add_unfiltered_read(component_id);
+        let _ = (component_id, world, system_meta);
+
+        // TODO: Use an alias-permitting technique
+        // system_meta
+        //     .component_access_set
+        //     .add_unfiltered_read(component_id);
         //
-        //         let archetype_component_id = world
-        //             .get_resource_archetype_component_id(component_id)
-        //             .unwrap();
+        // let archetype_component_id = world
+        //     .get_resource_archetype_component_id(component_id)
+        //     .unwrap();
         //
-        //         system_meta
-        //             .archetype_component_access
-        //             .add_read(archetype_component_id);
+        // system_meta
+        //     .archetype_component_access
+        //     .add_read(archetype_component_id);
     }
 
     fn fetch_tls_snapshot() -> Self::TlsSnapshot {
@@ -237,7 +241,7 @@ unsafe impl<T: RandomComponent> RandomResourceList for &'_ T {
             .get_resource_by_id(state)
             .unwrap_or_else(|| {
                 panic!(
-                    "Resource requested does not exist: {}",
+                    "Random component never registered: {}",
                     std::any::type_name::<T>()
                 )
             })
@@ -257,9 +261,9 @@ unsafe impl<T: RandomComponent> RandomResourceList for &'_ mut T {
     type TlsSnapshot = *mut RandomArena<T>;
 
     fn get_param_state(world: &mut World, system_meta: &mut SystemMeta) -> Self::ParamState {
-        let component_id = world.init_resource::<RandomArena<T>>();
-
-        // TODO
+        // TODO: Use an alias-permitting technique
+        // let component_id = world.init_resource::<RandomArena<T>>();
+        //
         // let combined_access = system_meta.component_access_set.combined_access();
         // assert!(
         //     !combined_access.has_write(component_id),
@@ -267,27 +271,31 @@ unsafe impl<T: RandomComponent> RandomResourceList for &'_ mut T {
         //     std::any::type_name::<T>(),
         //     system_meta.name(),
         // );
+        //
+        // component_id
 
-        component_id
+        <ResMut<RandomArena<T>> as SystemParam>::init_state(world, system_meta)
     }
 
     fn update_access_sets(
-        state: &Self::ParamState,
+        &component_id: &Self::ParamState,
         world: &mut World,
         system_meta: &mut SystemMeta,
     ) {
-        // TODO
-        //         system_meta
-        //             .component_access_set
-        //             .add_unfiltered_read(component_id);
+        let _ = (component_id, world, system_meta);
+
+        // TODO: Use an alias-permitting technique
+        // system_meta
+        //     .component_access_set
+        //     .add_unfiltered_read(component_id);
         //
-        //         let archetype_component_id = world
-        //             .get_resource_archetype_component_id(component_id)
-        //             .unwrap();
+        // let archetype_component_id = world
+        //     .get_resource_archetype_component_id(component_id)
+        //     .unwrap();
         //
-        //         system_meta
-        //             .archetype_component_access
-        //             .add_read(archetype_component_id);
+        // system_meta
+        //     .archetype_component_access
+        //     .add_read(archetype_component_id);
     }
 
     fn fetch_tls_snapshot() -> Self::TlsSnapshot {
@@ -302,7 +310,7 @@ unsafe impl<T: RandomComponent> RandomResourceList for &'_ mut T {
             .get_resource_by_id(state)
             .unwrap_or_else(|| {
                 panic!(
-                    "Resource requested does not exist: {}",
+                    "Random component never registered: {}",
                     std::any::type_name::<T>()
                 )
             })
@@ -324,10 +332,9 @@ unsafe impl<T: RandomEvent> RandomResourceList for SendsEvent<T> {
     type TlsSnapshot = *mut Events<T>;
 
     fn get_param_state(world: &mut World, system_meta: &mut SystemMeta) -> Self::ParamState {
-        // TODO: Don't initialize the actual value.
-        let component_id = world.init_resource::<Events<T>>();
-
-        // TODO
+        // TODO: Use an alias-permitting technique
+        // let component_id = world.init_resource::<RandomArena<T>>();
+        //
         // let combined_access = system_meta.component_access_set.combined_access();
         // assert!(
         //     !combined_access.has_write(component_id),
@@ -335,27 +342,31 @@ unsafe impl<T: RandomEvent> RandomResourceList for SendsEvent<T> {
         //     std::any::type_name::<T>(),
         //     system_meta.name(),
         // );
+        //
+        // component_id
 
-        component_id
+        <ResMut<Events<T>> as SystemParam>::init_state(world, system_meta)
     }
 
     fn update_access_sets(
-        state: &Self::ParamState,
+        &component_id: &Self::ParamState,
         world: &mut World,
         system_meta: &mut SystemMeta,
     ) {
-        // TODO
-        //         system_meta
-        //             .component_access_set
-        //             .add_unfiltered_read(component_id);
+        let _ = (component_id, world, system_meta);
+
+        // TODO: Use an alias-permitting technique
+        // system_meta
+        //     .component_access_set
+        //     .add_unfiltered_read(component_id);
         //
-        //         let archetype_component_id = world
-        //             .get_resource_archetype_component_id(component_id)
-        //             .unwrap();
+        // let archetype_component_id = world
+        //     .get_resource_archetype_component_id(component_id)
+        //     .unwrap();
         //
-        //         system_meta
-        //             .archetype_component_access
-        //             .add_read(archetype_component_id);
+        // system_meta
+        //     .archetype_component_access
+        //     .add_read(archetype_component_id);
     }
 
     fn fetch_tls_snapshot() -> Self::TlsSnapshot {
@@ -368,12 +379,7 @@ unsafe impl<T: RandomEvent> RandomResourceList for SendsEvent<T> {
     ) -> Self::TlsSnapshot {
         world
             .get_resource_by_id(state)
-            .unwrap_or_else(|| {
-                panic!(
-                    "Resource requested does not exist: {}",
-                    std::any::type_name::<T>()
-                )
-            })
+            .unwrap_or_else(|| panic!("Event never registered: {}", std::any::type_name::<T>()))
             .as_ptr()
             .cast()
     }

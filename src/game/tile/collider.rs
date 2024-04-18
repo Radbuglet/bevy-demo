@@ -3,6 +3,7 @@ use bevy_ecs::{
     entity::Entity,
     event::EventReader,
     query::{Added, Changed},
+    removal_detection::RemovedComponents,
     schedule::IntoSystemConfigs,
     system::Query,
 };
@@ -85,6 +86,8 @@ pub fn build(app: &mut crate::AppBuilder) {
         sys_add_collider,
         sys_move_colliders.after(sys_add_collider),
     ));
+
+    app.disposer.add_systems(sys_remove_collider);
 }
 
 pub fn sys_add_collider(
@@ -141,6 +144,18 @@ pub fn sys_move_colliders(
             let new_chunk = get_collider_chunk_or_insert(world, new_chunk);
 
             new_chunk.register(tracked, aabb);
+        }
+    });
+}
+
+pub fn sys_remove_collider(
+    mut removed: RemovedComponents<ObjOwner<TrackedCollider>>,
+    mut rand: RandomAccess<(&mut TrackedColliderChunk, &mut TrackedCollider)>,
+) {
+    rand.provide(|| {
+        for collider in removed.read() {
+            let collider = collider.get::<TrackedCollider>();
+            collider.chunk.unregister(collider);
         }
     });
 }
