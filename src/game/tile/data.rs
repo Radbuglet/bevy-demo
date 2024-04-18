@@ -1,3 +1,4 @@
+use bevy_app::{App, PostUpdate};
 use bevy_ecs::{entity::Entity, event::Event, removal_detection::RemovedComponents};
 use macroquad::math::{IVec2, Vec2};
 use rustc_hash::FxHashMap;
@@ -10,7 +11,9 @@ use crate::{
         scalar::ilerp_f32,
     },
     random_component, random_event,
-    util::arena::{send_event, spawn_entity, Obj, ObjOwner, RandomAccess, RandomEntityExt},
+    util::arena::{
+        send_event, spawn_entity, Obj, ObjOwner, RandomAccess, RandomAppExt, RandomEntityExt,
+    },
 };
 
 use super::material::MaterialId;
@@ -274,11 +277,11 @@ impl TileChunk {
 
 // === Systems === //
 
-pub fn build(app: &mut crate::AppBuilder) {
-    app.add_unlinker::<TileWorld>();
-    app.add_unlinker::<TileChunk>();
-
-    app.disposer.add_systems(sys_cleanup_chunk);
+pub fn plugin(app: &mut App) {
+    app.add_random_component::<TileWorld>();
+    app.add_random_component::<TileChunk>();
+    app.add_event::<WorldCreatedChunk>();
+    app.add_systems(PostUpdate, (sys_cleanup_chunk,));
 }
 
 fn sys_cleanup_chunk(

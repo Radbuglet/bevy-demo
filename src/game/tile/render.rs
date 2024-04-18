@@ -1,9 +1,11 @@
+use bevy_app::App;
 use bevy_ecs::{component::Component, system::Query};
 use macroquad::{color::Color, math::IVec2, shapes::draw_rectangle};
 
 use crate::{
     random_component,
-    util::arena::{ObjOwner, RandomAccess},
+    util::arena::{ObjOwner, RandomAccess, RandomAppExt},
+    Render,
 };
 
 use super::{
@@ -27,10 +29,9 @@ pub struct SolidTileMaterial {
 
 // === Systems === //
 
-pub fn build(app: &mut crate::AppBuilder) {
-    app.add_unlinker::<SolidTileMaterial>();
-
-    app.render.add_systems(sys_render_chunks);
+pub fn plugin(app: &mut App) {
+    app.add_random_component::<SolidTileMaterial>();
+    app.add_systems(Render, (sys_render_chunks,));
 }
 
 fn sys_render_chunks(

@@ -1,12 +1,13 @@
 use std::fmt;
 
+use bevy_app::App;
 use bevy_ecs::entity::Entity;
 use rustc_hash::FxHashMap;
 
 use crate::{
     random_component,
     util::{
-        arena::{Obj, RandomComponent, RandomEntityExt},
+        arena::{Obj, RandomAppExt, RandomComponent, RandomEntityExt},
         lang::ensure_index,
     },
 };
@@ -87,7 +88,7 @@ impl<T> MaterialCache<T> {
 
 // === Systems === //
 
-pub fn build(app: &mut crate::AppBuilder) {
-    app.add_unlinker::<MaterialRegistry>();
-    app.add_unlinker::<BaseMaterialDescriptor>();
+pub fn plugin(app: &mut App) {
+    app.add_random_component::<MaterialRegistry>();
+    app.add_random_component::<BaseMaterialDescriptor>();
 }

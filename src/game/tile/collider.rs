@@ -1,3 +1,4 @@
+use bevy_app::{App, PostUpdate, Update};
 use bevy_ecs::{
     component::Component,
     entity::Entity,
@@ -12,7 +13,7 @@ use macroquad::math::IVec2;
 use crate::{
     game::math::aabb::Aabb,
     random_component,
-    util::arena::{Obj, ObjOwner, RandomAccess, RandomEntityExt, SendsEvent},
+    util::arena::{Obj, ObjOwner, RandomAccess, RandomAppExt, RandomEntityExt, SendsEvent},
 };
 
 use super::data::{TileChunk, TileLayerConfig, TileWorld, WorldCreatedChunk};
@@ -77,17 +78,20 @@ impl TrackedColliderChunk {
 
 // === Systems === //
 
-pub fn build(app: &mut crate::AppBuilder) {
-    app.add_unlinker::<TrackedColliderChunk>();
-    app.add_unlinker::<TrackedCollider>();
+pub fn plugin(app: &mut App) {
+    app.add_random_component::<TrackedColliderChunk>();
+    app.add_random_component::<TrackedCollider>();
 
-    app.update.add_systems((
-        sys_add_collider_to_chunk,
-        sys_add_collider,
-        sys_move_colliders.after(sys_add_collider),
-    ));
+    app.add_systems(
+        Update,
+        (
+            sys_add_collider_to_chunk,
+            sys_add_collider,
+            sys_move_colliders.after(sys_add_collider),
+        ),
+    );
 
-    app.disposer.add_systems(sys_remove_collider);
+    app.add_systems(PostUpdate, (sys_remove_collider,));
 }
 
 pub fn sys_add_collider(

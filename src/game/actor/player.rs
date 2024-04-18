@@ -1,5 +1,6 @@
 use std::collections::VecDeque;
 
+use bevy_app::{App, Startup, Update};
 use bevy_ecs::{component::Component, schedule::IntoSystemConfigs, system::Query};
 use macroquad::{
     color::{Color, DARKPURPLE, GREEN, RED},
@@ -20,6 +21,7 @@ use crate::{
         },
     },
     util::arena::{spawn_entity, RandomAccess, RandomEntityExt, SendsEvent},
+    Render,
 };
 
 #[derive(Component)]
@@ -33,17 +35,20 @@ pub struct Player {
     trail: VecDeque<Vec2>,
 }
 
-pub fn build(app: &mut crate::AppBuilder) {
-    app.startup.add_systems(sys_create_local_player);
+pub fn plugin(app: &mut App) {
+    app.add_systems(Startup, (sys_create_local_player,));
 
-    app.update.add_systems((
-        sys_handle_controls,
-        sys_update_kinematics
-            .after(sys_handle_controls)
-            .before(sys_add_collider),
-    ));
+    app.add_systems(
+        Update,
+        (
+            sys_handle_controls,
+            sys_update_kinematics
+                .after(sys_handle_controls)
+                .before(sys_add_collider),
+        ),
+    );
 
-    app.render.add_systems(sys_render_players);
+    app.add_systems(Render, (sys_render_players,));
 }
 
 fn sys_create_local_player(

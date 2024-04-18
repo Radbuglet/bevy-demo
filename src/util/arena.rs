@@ -10,6 +10,7 @@ use std::{
 };
 
 use autoken::{cap, BorrowsMut, BorrowsRef, CapTarget, TokenSet};
+use bevy_app::{App, Last};
 use bevy_ecs::{
     bundle::Bundle,
     component::{Component, ComponentId, Tick},
@@ -722,6 +723,17 @@ impl<T> Copy for ObjOwner<T> {}
 impl<T> Clone for ObjOwner<T> {
     fn clone(&self) -> Self {
         *self
+    }
+}
+
+pub trait RandomAppExt {
+    fn add_random_component<T: RandomComponent>(&mut self);
+}
+
+impl RandomAppExt for App {
+    fn add_random_component<T: RandomComponent>(&mut self) {
+        self.init_resource::<RandomArena<T>>();
+        self.add_systems(Last, make_unlinker_system::<T>());
     }
 }
 

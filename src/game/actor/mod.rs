@@ -1,5 +1,7 @@
+use bevy_app::App;
+
 pub mod player;
 
-pub fn build(app: &mut crate::AppBuilder) {
-    player::build(app);
+pub fn plugin(app: &mut App) {
+    app.add_plugins((player::plugin,));
 }
