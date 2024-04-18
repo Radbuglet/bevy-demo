@@ -1,3 +1,5 @@
+use std::ops::ControlFlow;
+
 use bevy_app::{App, PostUpdate, Update};
 use bevy_ecs::{
     component::Component,
@@ -8,7 +10,8 @@ use bevy_ecs::{
     schedule::IntoSystemConfigs,
     system::Query,
 };
-use macroquad::math::IVec2;
+use macroquad::math::{IVec2, Vec2};
+use rustc_hash::FxHashSet;
 
 use crate::{
     game::math::aabb::Aabb,
@@ -18,6 +21,8 @@ use crate::{
 
 use super::data::{TileChunk, TileLayerConfig, TileWorld, WorldCreatedChunk};
 
+random_component!(WorldCollisions, TrackedColliderChunk, TrackedCollider);
+
 // === Collider === //
 
 #[derive(Debug, Component)]
@@ -26,9 +31,49 @@ pub struct InsideWorld(pub Obj<TileWorld>);
 #[derive(Debug, Component)]
 pub struct Collider(pub Aabb);
 
-// === ChunkColliders === //
+// === WorldCollisions === //
 
-random_component!(TrackedColliderChunk, TrackedCollider);
+#[derive(Debug)]
+pub struct WorldCollisions {
+    data: Obj<TileWorld>,
+}
+
+impl WorldCollisions {
+    pub fn new(data: Obj<TileWorld>) -> Self {
+        Self { data }
+    }
+
+    pub fn collisions<B>(
+        &self,
+        aabb: Aabb,
+        mut f: impl FnMut((Entity, Aabb)) -> ControlFlow<B>,
+    ) -> ControlFlow<B> {
+        let config = self.data.config();
+
+        let mut chunks = FxHashSet::default();
+
+        for chunk in config
+            .actor_aabb_to_tile(aabb.grow(Vec2::splat(10.)))
+            .inclusive()
+            .iter()
+        {
+            chunks.insert(TileLayerConfig::decompose_world_pos(chunk).0);
+        }
+
+        for &chunk in &chunks {
+            let chunk =
+                get_collider_chunk_or_insert(self.data, self.data.chunk_or_create(chunk).entity());
+
+            for isect in chunk.intersections(aabb) {
+                f(isect)?;
+            }
+        }
+
+        ControlFlow::Continue(())
+    }
+}
+
+// === ChunkColliders === //
 
 #[derive(Debug)]
 pub struct TrackedColliderChunk {
@@ -67,18 +112,24 @@ impl TrackedColliderChunk {
         self.aabbs[collider.index] = aabb;
     }
 
-    pub fn aabbs(&self) -> impl ExactSizeIterator<Item = Aabb> + '_ {
-        self.aabbs.iter().copied()
+    pub fn aabbs(&self) -> impl ExactSizeIterator<Item = (Entity, Aabb)> + '_ {
+        self.handles
+            .iter()
+            .copied()
+            .map(Obj::entity)
+            .zip(self.aabbs.iter().copied())
     }
 
-    pub fn intersections(&self, aabb: Aabb) -> bool {
-        self.aabbs().any(|other| aabb.intersects(other))
+    pub fn intersections(&self, aabb: Aabb) -> impl Iterator<Item = (Entity, Aabb)> + '_ {
+        self.aabbs()
+            .filter(move |&(_, other)| aabb.intersects(other))
     }
 }
 
 // === Systems === //
 
 pub fn plugin(app: &mut App) {
+    app.add_random_component::<WorldCollisions>();
     app.add_random_component::<TrackedColliderChunk>();
     app.add_random_component::<TrackedCollider>();
 
@@ -137,17 +188,17 @@ pub fn sys_move_colliders(
             let new_pos = config.actor_to_decomposed(new_pos_world).0;
 
             if new_pos == old_pos {
-                continue;
+                old_chunk.deref_mut().aabbs[tracked.index] = aabb;
+            } else {
+                // Remove from the previous chunk
+                old_chunk.unregister(tracked);
+
+                // Move them to a new chunk
+                let new_chunk = world.chunk_or_create(new_pos).entity();
+                let new_chunk = get_collider_chunk_or_insert(world, new_chunk);
+
+                new_chunk.register(tracked, aabb);
             }
-
-            // Remove from the previous chunk
-            old_chunk.unregister(tracked);
-
-            // Move them to a new chunk
-            let new_chunk = world.chunk_or_create(new_pos).entity();
-            let new_chunk = get_collider_chunk_or_insert(world, new_chunk);
-
-            new_chunk.register(tracked, aabb);
         }
     });
 }
@@ -178,7 +229,10 @@ pub fn sys_add_collider_to_chunk(
     });
 }
 
-fn get_collider_chunk_or_insert(world: Obj<TileWorld>, chunk: Entity) -> Obj<TrackedColliderChunk> {
+pub fn get_collider_chunk_or_insert(
+    world: Obj<TileWorld>,
+    chunk: Entity,
+) -> Obj<TrackedColliderChunk> {
     chunk.try_get::<TrackedColliderChunk>().unwrap_or_else(|| {
         chunk.insert(TrackedColliderChunk {
             world,

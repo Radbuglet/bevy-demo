@@ -2,6 +2,7 @@ use std::collections::VecDeque;
 
 use bevy_app::{App, Startup, Update};
 use bevy_ecs::{component::Component, schedule::IntoSystemConfigs, system::Query};
+use cbit::cbit;
 use macroquad::{
     color::{Color, DARKPURPLE, GREEN, RED},
     input::{is_key_down, KeyCode},
@@ -14,7 +15,10 @@ use crate::{
     game::{
         math::aabb::Aabb,
         tile::{
-            collider::{sys_add_collider, Collider, InsideWorld},
+            collider::{
+                sys_add_collider, Collider, InsideWorld, TrackedCollider, TrackedColliderChunk,
+                WorldCollisions,
+            },
             data::{TileChunk, TileLayerConfig, TileWorld, WorldCreatedChunk},
             material::{BaseMaterialDescriptor, MaterialRegistry},
             render::{RenderableWorld, SolidTileMaterial},
@@ -57,14 +61,16 @@ fn sys_create_local_player(
         &mut MaterialRegistry,
         &mut BaseMaterialDescriptor,
         &mut SolidTileMaterial,
+        &mut WorldCollisions,
     )>,
 ) {
     rand.provide(|| {
         let world = spawn_entity(RenderableWorld::default());
-        let world_obj = world.insert(TileWorld::new(TileLayerConfig {
+        let world_data = world.insert(TileWorld::new(TileLayerConfig {
             offset: Vec2::ZERO,
             size: 10.,
         }));
+        world.insert(WorldCollisions::new(world_data));
 
         let mut registry = world.insert(MaterialRegistry::default());
         registry.register("game:air", spawn_entity(()));
@@ -77,7 +83,7 @@ fn sys_create_local_player(
         spawn_entity((
             Pos(Vec2::ZERO),
             Vel(Vec2::ONE),
-            InsideWorld(world_obj),
+            InsideWorld(world_data),
             Collider(Aabb::ZERO_TO_ONE),
             Player {
                 trail: VecDeque::new(),
@@ -91,8 +97,11 @@ fn sys_update_kinematics(
     mut rand: RandomAccess<(
         &mut TileWorld,
         &mut TileChunk,
-        &mut MaterialRegistry,
-        &mut BaseMaterialDescriptor,
+        &MaterialRegistry,
+        &BaseMaterialDescriptor,
+        &WorldCollisions,
+        &TrackedColliderChunk,
+        &TrackedCollider,
         SendsEvent<WorldCreatedChunk>,
     )>,
 ) {
@@ -118,6 +127,14 @@ fn sys_update_kinematics(
                 world_data.config().actor_to_tile(pos.0),
                 world_mats.lookup_by_name("game:grass").unwrap(),
             );
+
+            cbit! {
+                for (entity, aabb) in world_data.entity().get::<WorldCollisions>().collisions(
+                    Aabb::new(100., 100., 100., 100.)
+                ) {
+                    log::info!("{entity:?} {aabb:?}");
+                }
+            }
         }
     });
 }

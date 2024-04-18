@@ -1,4 +1,5 @@
 #![feature(arbitrary_self_types)]
+#![allow(clippy::type_complexity)]
 
 use bevy_app::App;
 use bevy_ecs::schedule::{LogLevel, ScheduleBuildSettings, ScheduleLabel};

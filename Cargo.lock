@@ -161,6 +161,7 @@ dependencies = [
  "autoken",
  "bevy_app",
  "bevy_ecs",
+ "cbit",
  "color-backtrace",
  "env_logger",
  "generational-arena",
@@ -344,6 +345,17 @@ name = "byteorder"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1fd0f2584146f6f2ef48085050886acf353beff7305ebd1ae69500e27c67f64b"
+
+[[package]]
+name = "cbit"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eb3c0414a6935bfc469811f47c2d9a7226f11d068c732deedec6f8548e602347"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
 
 [[package]]
 name = "cc"

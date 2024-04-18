@@ -7,6 +7,7 @@ edition = "2021"
 autoken = { git = "https://github.com/Radbuglet/autoken.git", rev = "f02c8390ebd310e3f5679ffec2a31a1e6a217cbc" }
 bevy_app = "0.13.2"
 bevy_ecs = "0.13.2"
+cbit = "0.1.0"
 color-backtrace = "0.6.1"
 env_logger = "0.11.3"
 generational-arena = "0.2.9"
