@@ -2,24 +2,23 @@ use std::collections::VecDeque;
 
 use bevy_app::{App, Startup, Update};
 use bevy_ecs::{component::Component, schedule::IntoSystemConfigs, system::Query};
-use cbit::cbit;
 use macroquad::{
     color::{Color, DARKPURPLE, GREEN, RED},
     input::{is_key_down, KeyCode},
-    math::Vec2,
+    math::{IVec2, Vec2},
     shapes::draw_circle,
-    window::{screen_height, screen_width},
 };
 
 use crate::{
     game::{
-        math::aabb::Aabb,
+        math::{aabb::Aabb, glam::Vec2Ext},
         tile::{
             collider::{
                 sys_add_collider, Collider, InsideWorld, TrackedCollider, TrackedColliderChunk,
                 WorldColliders,
             },
             data::{TileChunk, TileLayerConfig, TileWorld, WorldCreatedChunk},
+            kinematic::{AnyCollision, KinematicApi, TileColliderDescriptor},
             material::{BaseMaterialDescriptor, MaterialRegistry},
             render::{RenderableWorld, SolidTileMaterial},
         },
@@ -58,10 +57,14 @@ pub fn plugin(app: &mut App) {
 fn sys_create_local_player(
     mut rand: RandomAccess<(
         &mut TileWorld,
+        &mut TileChunk,
         &mut MaterialRegistry,
         &mut BaseMaterialDescriptor,
+        &mut TileColliderDescriptor,
         &mut SolidTileMaterial,
         &mut WorldColliders,
+        &mut KinematicApi,
+        SendsEvent<WorldCreatedChunk>,
     )>,
 ) {
     rand.provide(|| {
@@ -70,15 +73,22 @@ fn sys_create_local_player(
             offset: Vec2::ZERO,
             size: 10.,
         }));
-        world.insert(WorldColliders::new(world_data));
+        let world_colliders = world.insert(WorldColliders::new(world_data));
 
         let mut registry = world.insert(MaterialRegistry::default());
         registry.register("game:air", spawn_entity(()));
-        registry.register("game:grass", {
+        let grass = registry.register("game:grass", {
             let descriptor = spawn_entity(());
             descriptor.insert(SolidTileMaterial { color: GREEN });
+            descriptor.insert(TileColliderDescriptor::new([Aabb::ZERO_TO_ONE]));
             descriptor
         });
+
+        for x in 0..100 {
+            world_data.set_tile(IVec2::new(x, x), grass);
+        }
+
+        world.insert(KinematicApi::new(world_data, registry, world_colliders));
 
         spawn_entity((
             Pos(Vec2::ZERO),
@@ -93,53 +103,40 @@ fn sys_create_local_player(
 }
 
 fn sys_update_kinematics(
-    mut query: Query<(&InsideWorld, &mut Player, &mut Collider, &mut Pos, &mut Vel)>,
+    mut query: Query<(&InsideWorld, &mut Pos, &mut Vel, &mut Collider)>,
     mut rand: RandomAccess<(
         &mut TileWorld,
         &mut TileChunk,
-        &MaterialRegistry,
-        &BaseMaterialDescriptor,
-        &WorldColliders,
-        &TrackedColliderChunk,
+        &mut KinematicApi,
+        &mut TrackedColliderChunk,
         &TrackedCollider,
+        &WorldColliders,
+        &TileColliderDescriptor,
+        &MaterialRegistry,
         SendsEvent<WorldCreatedChunk>,
     )>,
 ) {
     rand.provide(|| {
-        for (&InsideWorld(world_data), mut player, mut collider, mut pos, mut vel) in
-            query.iter_mut()
-        {
-            pos.0 += vel.0;
-            vel.0 *= 0.98;
+        for (&InsideWorld(world), mut pos, mut vel, mut collider) in query.iter_mut() {
+            let mut world = world.entity().get::<KinematicApi>();
 
-            pos.0.x = pos.0.x.rem_euclid(screen_width());
-            pos.0.y = pos.0.y.rem_euclid(screen_height());
+            let delta = vel.0;
+            let filter = |coll| match coll {
+                AnyCollision::Tile(_, _, _) => true,
+                AnyCollision::Collider(_, _) => false,
+            };
 
-            collider.0 = Aabb::new_centered(pos.0, Vec2::ONE);
+            let delta = world.move_by(collider.0, delta, filter);
+            pos.0 += delta;
+            collider.0 = Aabb::new_centered(pos.0, Vec2::splat(50.));
 
-            player.trail.push_front(pos.0);
-            if player.trail.len() > 100 {
-                player.trail.pop_back();
-            }
-
-            let world_mats = world_data.entity().get::<MaterialRegistry>();
-            world_data.set_tile(
-                world_data.config().actor_to_tile(pos.0),
-                world_mats.lookup_by_name("game:grass").unwrap(),
-            );
-
-            cbit! {
-                for (entity, aabb) in world_data.entity().get::<WorldColliders>().collisions(
-                    Aabb::new(100., 100., 100., 100.)
-                ) {
-                    log::info!("{entity:?} {aabb:?}");
-                }
-            }
+            let mask = world.get_clip_mask(collider.0, vel.0, filter);
+            vel.0 = vel.0.mask(mask);
         }
     });
 }
 
-fn sys_handle_controls(mut query: Query<&mut Vel>) {
+fn sys_handle_controls(mut query: Query<(&Pos, &mut Vel, &mut Player)>) {
     let mut heading = Vec2::ZERO;
     if is_key_down(KeyCode::A) {
         heading += Vec2::NEG_X;
@@ -156,8 +153,14 @@ fn sys_handle_controls(mut query: Query<&mut Vel>) {
 
     heading = heading.normalize_or_zero();
 
-    for mut vel in query.iter_mut() {
+    for (pos, mut vel, mut player) in query.iter_mut() {
         vel.0 += heading;
+        vel.0 *= 0.98;
+
+        player.trail.push_front(pos.0);
+        if player.trail.len() > 100 {
+            player.trail.pop_back();
+        }
     }
 }
 

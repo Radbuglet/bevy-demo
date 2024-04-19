@@ -27,6 +27,28 @@ impl Vec2Ext for Vec2 {
     }
 }
 
+pub trait BVec2Ext {
+    fn set_axis(&mut self, axis: Axis2, value: bool);
+
+    fn get_axis(self, axis: Axis2) -> bool;
+}
+
+impl BVec2Ext for BVec2 {
+    fn set_axis(&mut self, axis: Axis2, value: bool) {
+        match axis {
+            X => self.x = value,
+            Y => self.y = value,
+        }
+    }
+
+    fn get_axis(self, axis: Axis2) -> bool {
+        match axis {
+            X => self.x,
+            Y => self.y,
+        }
+    }
+}
+
 // === Axis-Aligned Constructs === //
 
 #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, PartialOrd, Ord)]

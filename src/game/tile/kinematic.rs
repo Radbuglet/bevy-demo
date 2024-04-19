@@ -3,13 +3,13 @@ use std::ops::ControlFlow;
 use bevy_app::App;
 use bevy_ecs::entity::Entity;
 use cbit::cbit;
-use macroquad::math::{IVec2, Vec2};
+use macroquad::math::{BVec2, IVec2, Vec2};
 use smallvec::SmallVec;
 
 use crate::{
     game::math::{
         aabb::Aabb,
-        glam::{add_magnitude, Axis2, Sign, Vec2Ext},
+        glam::{add_magnitude, Axis2, BVec2Ext, Sign, Vec2Ext},
     },
     random_component,
     util::arena::{Obj, RandomAppExt},
@@ -68,6 +68,19 @@ pub struct KinematicApi {
 impl KinematicApi {
     pub const TOLERANCE: f32 = 0.01;
 
+    pub fn new(
+        data: Obj<TileWorld>,
+        registry: Obj<MaterialRegistry>,
+        colliders: Obj<WorldColliders>,
+    ) -> Self {
+        Self {
+            data,
+            registry,
+            colliders,
+            cache: MaterialCache::default(),
+        }
+    }
+
     pub fn iter_colliders_in<B>(
         &mut self,
         check_aabb: Aabb,
@@ -76,6 +89,7 @@ impl KinematicApi {
         let config = self.data.config();
 
         for tile in config.actor_aabb_to_tile(check_aabb).inclusive().iter() {
+            let offset = config.tile_to_actor_rect(tile).min;
             let material = self.data.tile(tile);
 
             if material == MaterialId::AIR {
@@ -86,12 +100,18 @@ impl KinematicApi {
                 continue;
             };
 
-            for &aabb in &colliders.aabbs {
-                if !aabb.intersects(check_aabb) {
+            for &tile_aabb in &colliders.aabbs {
+                let tile_aabb = Aabb {
+                    min: tile_aabb.min * config.size,
+                    max: tile_aabb.max * config.size,
+                };
+                let tile_aabb = tile_aabb.translated(offset);
+
+                if !tile_aabb.intersects(check_aabb) {
                     continue;
                 }
 
-                f(AnyCollision::Tile(tile, material, aabb))?;
+                f(AnyCollision::Tile(tile, material, tile_aabb))?;
             }
         }
 
@@ -116,6 +136,25 @@ impl KinematicApi {
         });
 
         false
+    }
+
+    pub fn get_clip_mask(
+        &mut self,
+        aabb: Aabb,
+        by: Vec2,
+        mut filter: impl FnMut(AnyCollision) -> bool,
+    ) -> BVec2 {
+        let mut mask = BVec2::default();
+
+        for axis in Axis2::iter() {
+            let signed_delta = by.get_axis(axis);
+            let check_aabb =
+                aabb.translate_extend(axis.unit_mag((Self::TOLERANCE * 2.).copysign(signed_delta)));
+
+            mask.set_axis(axis, !self.has_colliders_in(check_aabb, &mut filter));
+        }
+
+        mask
     }
 
     pub fn move_by(
