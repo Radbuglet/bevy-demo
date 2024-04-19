@@ -4,7 +4,9 @@
 use bevy_app::App;
 use bevy_ecs::schedule::{LogLevel, ScheduleBuildSettings, ScheduleLabel};
 use macroquad::{
+    color::RED,
     input::{is_key_pressed, is_quit_requested, KeyCode},
+    text::draw_text,
     window::next_frame,
 };
 
@@ -29,7 +31,14 @@ async fn main() {
 
     while !is_quit_requested() && !is_key_pressed(KeyCode::Escape) {
         app.update();
-        app.world.run_schedule(Render); // TODO
+        app.world.run_schedule(Render);
+        draw_text(
+            &format!("Entities: {}", app.world.entities().total_count()),
+            15.,
+            15.,
+            24.,
+            RED,
+        );
         next_frame().await;
     }
 }

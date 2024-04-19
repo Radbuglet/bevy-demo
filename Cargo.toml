@@ -16,3 +16,6 @@ macroquad = "0.4.5"
 rustc-hash = "1.1.0"
 scopeguard = "1.2.0"
 smallvec = "1.13.2"
+
+[profile.release]
+lto = "thin"

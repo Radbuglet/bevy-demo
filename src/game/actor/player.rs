@@ -17,7 +17,7 @@ use crate::{
         tile::{
             collider::{
                 sys_add_collider, Collider, InsideWorld, TrackedCollider, TrackedColliderChunk,
-                WorldCollisions,
+                WorldColliders,
             },
             data::{TileChunk, TileLayerConfig, TileWorld, WorldCreatedChunk},
             material::{BaseMaterialDescriptor, MaterialRegistry},
@@ -61,7 +61,7 @@ fn sys_create_local_player(
         &mut MaterialRegistry,
         &mut BaseMaterialDescriptor,
         &mut SolidTileMaterial,
-        &mut WorldCollisions,
+        &mut WorldColliders,
     )>,
 ) {
     rand.provide(|| {
@@ -70,7 +70,7 @@ fn sys_create_local_player(
             offset: Vec2::ZERO,
             size: 10.,
         }));
-        world.insert(WorldCollisions::new(world_data));
+        world.insert(WorldColliders::new(world_data));
 
         let mut registry = world.insert(MaterialRegistry::default());
         registry.register("game:air", spawn_entity(()));
@@ -99,7 +99,7 @@ fn sys_update_kinematics(
         &mut TileChunk,
         &MaterialRegistry,
         &BaseMaterialDescriptor,
-        &WorldCollisions,
+        &WorldColliders,
         &TrackedColliderChunk,
         &TrackedCollider,
         SendsEvent<WorldCreatedChunk>,
@@ -129,7 +129,7 @@ fn sys_update_kinematics(
             );
 
             cbit! {
-                for (entity, aabb) in world_data.entity().get::<WorldCollisions>().collisions(
+                for (entity, aabb) in world_data.entity().get::<WorldColliders>().collisions(
                     Aabb::new(100., 100., 100., 100.)
                 ) {
                     log::info!("{entity:?} {aabb:?}");

@@ -21,7 +21,7 @@ use crate::{
 
 use super::data::{TileChunk, TileLayerConfig, TileWorld, WorldCreatedChunk};
 
-random_component!(WorldCollisions, TrackedColliderChunk, TrackedCollider);
+random_component!(WorldColliders, TrackedColliderChunk, TrackedCollider);
 
 // === Collider === //
 
@@ -34,11 +34,11 @@ pub struct Collider(pub Aabb);
 // === WorldCollisions === //
 
 #[derive(Debug)]
-pub struct WorldCollisions {
+pub struct WorldColliders {
     data: Obj<TileWorld>,
 }
 
-impl WorldCollisions {
+impl WorldColliders {
     pub fn new(data: Obj<TileWorld>) -> Self {
         Self { data }
     }
@@ -129,7 +129,7 @@ impl TrackedColliderChunk {
 // === Systems === //
 
 pub fn plugin(app: &mut App) {
-    app.add_random_component::<WorldCollisions>();
+    app.add_random_component::<WorldColliders>();
     app.add_random_component::<TrackedColliderChunk>();
     app.add_random_component::<TrackedCollider>();
 

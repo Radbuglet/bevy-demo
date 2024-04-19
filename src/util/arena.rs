@@ -27,8 +27,8 @@ use rustc_hash::FxHashMap;
 
 #[derive(Debug, Resource)]
 pub struct RandomArena<T> {
-    arena: Arena<(Entity, T)>,
-    map: FxHashMap<Entity, Obj<T>>,
+    pub arena: Arena<(Entity, T)>,
+    pub map: FxHashMap<Entity, Obj<T>>,
 }
 
 impl<T> Default for RandomArena<T> {
