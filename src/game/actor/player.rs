@@ -9,9 +9,9 @@ use bevy_ecs::{
 };
 use macroquad::{
     color::{Color, DARKPURPLE, GRAY, GREEN, RED},
-    input::{is_key_down, KeyCode},
+    input::{is_key_down, is_mouse_button_down, mouse_position, KeyCode, MouseButton},
     math::{Affine2, IVec2, Vec2},
-    shapes::draw_circle,
+    shapes::{draw_circle, draw_rectangle},
 };
 
 use crate::{
@@ -21,7 +21,7 @@ use crate::{
             collider::{Collider, InsideWorld, WorldColliders},
             data::{TileChunk, TileLayerConfig, TileWorld, WorldCreatedChunk},
             kinematic::{KinematicApi, TileColliderDescriptor},
-            material::{BaseMaterialDescriptor, MaterialRegistry},
+            material::{BaseMaterialDescriptor, MaterialId, MaterialRegistry},
             render::{RenderableWorld, SolidTileMaterial},
         },
     },
@@ -126,8 +126,14 @@ pub fn sys_create_local_player(
 }
 
 pub fn sys_handle_controls(
-    mut rand: RandomAccess<(&TileWorld, &mut VirtualCamera)>,
-    mut query: Query<(&Pos, &mut Vel, &mut Player)>,
+    mut rand: RandomAccess<(
+        &mut TileWorld,
+        &mut TileChunk,
+        &MaterialRegistry,
+        &mut VirtualCamera,
+        SendsEvent<WorldCreatedChunk>,
+    )>,
+    mut query: Query<(&InsideWorld, &Pos, &mut Vel, &mut Player)>,
 ) {
     rand.provide(|| {
         let mut heading = Vec2::ZERO;
@@ -146,13 +152,26 @@ pub fn sys_handle_controls(
 
         heading = heading.normalize_or_zero();
 
-        for (pos, mut vel, mut player) in query.iter_mut() {
+        for (&InsideWorld(world), pos, mut vel, mut player) in query.iter_mut() {
+            let camera = world.entity().get::<VirtualCamera>();
+            let registry = world.entity().get::<MaterialRegistry>();
+
             vel.0 += heading;
             vel.0 *= 0.98;
 
             player.trail.push_front(pos.0);
             if player.trail.len() > 100 {
                 player.trail.pop_back();
+            }
+
+            let hover = Vec2::from(mouse_position());
+            let hover = camera.project(hover);
+            let hover = world.config().actor_to_tile(hover);
+
+            if is_mouse_button_down(MouseButton::Left) {
+                world.set_tile(hover, MaterialId::AIR);
+            } else if is_mouse_button_down(MouseButton::Right) {
+                world.set_tile(hover, registry.lookup_by_name("game:stone").unwrap());
             }
         }
     });
@@ -174,23 +193,41 @@ pub fn sys_focus_camera_on_player(
     });
 }
 
-pub fn sys_render_players(mut query: Query<(&Pos, &Player)>, camera: Res<ActiveCamera>) {
+pub fn sys_render_players(
+    mut rand: RandomAccess<(&TileWorld, &mut VirtualCamera)>,
+    mut query: Query<(&InsideWorld, &Pos, &Player)>,
+    camera: Res<ActiveCamera>,
+) {
     let _guard = camera.apply();
 
-    for (pos, player) in query.iter_mut() {
-        for (i, &trail) in player.trail.iter().rev().enumerate() {
-            draw_circle(
-                trail.x,
-                trail.y,
-                20.,
-                Color::from_vec(
-                    DARKPURPLE
-                        .to_vec()
-                        .lerp(RED.to_vec(), i as f32 / player.trail.len() as f32),
-                ),
-            );
-        }
+    rand.provide(|| {
+        for (&InsideWorld(world), pos, player) in query.iter_mut() {
+            let config = world.config();
 
-        draw_circle(pos.0.x, pos.0.y, 20., RED);
-    }
+            // Draw placement indicator
+            {
+                let pos = Vec2::from(mouse_position());
+                let pos = camera.camera.unwrap().project(pos);
+                let pos = config.tile_to_actor_rect(config.actor_to_tile(pos));
+
+                draw_rectangle(pos.x(), pos.y(), pos.w(), pos.h(), RED);
+            }
+
+            // Draw player
+            for (i, &trail) in player.trail.iter().rev().enumerate() {
+                draw_circle(
+                    trail.x,
+                    trail.y,
+                    20.,
+                    Color::from_vec(
+                        DARKPURPLE
+                            .to_vec()
+                            .lerp(RED.to_vec(), i as f32 / player.trail.len() as f32),
+                    ),
+                );
+            }
+
+            draw_circle(pos.0.x, pos.0.y, 20., RED);
+        }
+    });
 }

@@ -63,7 +63,7 @@ pub fn sys_update_kinematics(
 
             let delta = world.move_by(collider.0, delta, filter);
             pos.0 += delta;
-            collider.0 = Aabb::new_centered(pos.0, Vec2::splat(50.));
+            collider.0 = Aabb::new_centered(pos.0, Vec2::splat(40.));
 
             let mask = world.get_clip_mask(collider.0, vel.0, filter);
             vel.0 = vel.0.mask(mask);
