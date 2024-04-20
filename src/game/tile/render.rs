@@ -1,8 +1,12 @@
 use bevy_app::App;
-use bevy_ecs::{component::Component, system::Query};
+use bevy_ecs::{
+    component::Component,
+    system::{Query, Res},
+};
 use macroquad::{color::Color, math::IVec2, shapes::draw_rectangle};
 
 use crate::{
+    game::actor::camera::ActiveCamera,
     random_component,
     util::arena::{ObjOwner, RandomAccess, RandomAppExt},
     Render,
@@ -46,7 +50,10 @@ fn sys_render_chunks(
         &MaterialRegistry,
         &SolidTileMaterial,
     )>,
+    camera: Res<ActiveCamera>,
 ) {
+    let _guard = camera.apply();
+
     rand.provide(|| {
         for (&ObjOwner(world), &ObjOwner(registry), mut cache) in query.iter_mut() {
             let config = world.config();

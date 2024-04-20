@@ -1,11 +1,15 @@
 use std::collections::VecDeque;
 
 use bevy_app::{App, Startup, Update};
-use bevy_ecs::{component::Component, schedule::IntoSystemConfigs, system::Query};
+use bevy_ecs::{
+    component::Component,
+    schedule::IntoSystemConfigs,
+    system::{Query, Res, ResMut},
+};
 use macroquad::{
     color::{Color, DARKPURPLE, GREEN, RED},
     input::{is_key_down, KeyCode},
-    math::{IVec2, Vec2},
+    math::{Affine2, IVec2, Vec2},
     shapes::draw_circle,
 };
 
@@ -26,6 +30,8 @@ use crate::{
     util::arena::{spawn_entity, RandomAccess, RandomEntityExt, SendsEvent},
     Render,
 };
+
+use super::camera::{ActiveCamera, VirtualCamera, VirtualCameraConstraints};
 
 #[derive(Component)]
 pub struct Pos(Vec2);
@@ -64,8 +70,10 @@ fn sys_create_local_player(
         &mut SolidTileMaterial,
         &mut WorldColliders,
         &mut KinematicApi,
+        &mut VirtualCamera,
         SendsEvent<WorldCreatedChunk>,
     )>,
+    mut camera: ResMut<ActiveCamera>,
 ) {
     rand.provide(|| {
         let world = spawn_entity(RenderableWorld::default());
@@ -74,6 +82,11 @@ fn sys_create_local_player(
             size: 10.,
         }));
         let world_colliders = world.insert(WorldColliders::new(world_data));
+        camera.camera = Some(world.insert(VirtualCamera::new(
+            Affine2::IDENTITY,
+            Aabb::new_centered(Vec2::ZERO, Vec2::splat(1000.)),
+            VirtualCameraConstraints::default().keep_visible_area(Vec2::new(1000., 1000.)),
+        )));
 
         let mut registry = world.insert(MaterialRegistry::default());
         registry.register("game:air", spawn_entity(()));
@@ -136,35 +149,47 @@ fn sys_update_kinematics(
     });
 }
 
-fn sys_handle_controls(mut query: Query<(&Pos, &mut Vel, &mut Player)>) {
-    let mut heading = Vec2::ZERO;
-    if is_key_down(KeyCode::A) {
-        heading += Vec2::NEG_X;
-    }
-    if is_key_down(KeyCode::D) {
-        heading += Vec2::X;
-    }
-    if is_key_down(KeyCode::W) {
-        heading += Vec2::NEG_Y;
-    }
-    if is_key_down(KeyCode::S) {
-        heading += Vec2::Y;
-    }
-
-    heading = heading.normalize_or_zero();
-
-    for (pos, mut vel, mut player) in query.iter_mut() {
-        vel.0 += heading;
-        vel.0 *= 0.98;
-
-        player.trail.push_front(pos.0);
-        if player.trail.len() > 100 {
-            player.trail.pop_back();
+fn sys_handle_controls(
+    mut rand: RandomAccess<(&TileWorld, &mut VirtualCamera)>,
+    mut query: Query<(&InsideWorld, &Pos, &mut Vel, &mut Player)>,
+) {
+    rand.provide(|| {
+        let mut heading = Vec2::ZERO;
+        if is_key_down(KeyCode::A) {
+            heading += Vec2::NEG_X;
         }
-    }
+        if is_key_down(KeyCode::D) {
+            heading += Vec2::X;
+        }
+        if is_key_down(KeyCode::W) {
+            heading += Vec2::NEG_Y;
+        }
+        if is_key_down(KeyCode::S) {
+            heading += Vec2::Y;
+        }
+
+        heading = heading.normalize_or_zero();
+
+        for (&InsideWorld(world), pos, mut vel, mut player) in query.iter_mut() {
+            vel.0 += heading;
+            vel.0 *= 0.98;
+
+            player.trail.push_front(pos.0);
+            if player.trail.len() > 100 {
+                player.trail.pop_back();
+            }
+
+            world
+                .entity()
+                .get::<VirtualCamera>()
+                .set_transform(Affine2::from_translation(pos.0));
+        }
+    });
 }
 
-fn sys_render_players(mut query: Query<(&Pos, &Player)>) {
+fn sys_render_players(mut query: Query<(&Pos, &Player)>, camera: Res<ActiveCamera>) {
+    let _guard = camera.apply();
+
     for (pos, player) in query.iter_mut() {
         for (i, &trail) in player.trail.iter().rev().enumerate() {
             draw_circle(
