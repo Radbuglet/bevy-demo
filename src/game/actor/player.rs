@@ -3,11 +3,12 @@ use std::collections::VecDeque;
 use bevy_app::{App, Startup, Update};
 use bevy_ecs::{
     component::Component,
+    query::With,
     schedule::IntoSystemConfigs,
     system::{Query, Res, ResMut},
 };
 use macroquad::{
-    color::{Color, DARKPURPLE, GREEN, RED},
+    color::{Color, DARKPURPLE, GRAY, GREEN, RED},
     input::{is_key_down, KeyCode},
     math::{Affine2, IVec2, Vec2},
     shapes::draw_circle,
@@ -15,14 +16,11 @@ use macroquad::{
 
 use crate::{
     game::{
-        math::{aabb::Aabb, glam::Vec2Ext},
+        math::aabb::Aabb,
         tile::{
-            collider::{
-                sys_add_collider, Collider, InsideWorld, TrackedCollider, TrackedColliderChunk,
-                WorldColliders,
-            },
+            collider::{Collider, InsideWorld, WorldColliders},
             data::{TileChunk, TileLayerConfig, TileWorld, WorldCreatedChunk},
-            kinematic::{AnyCollision, KinematicApi, TileColliderDescriptor},
+            kinematic::{KinematicApi, TileColliderDescriptor},
             material::{BaseMaterialDescriptor, MaterialRegistry},
             render::{RenderableWorld, SolidTileMaterial},
         },
@@ -31,13 +29,12 @@ use crate::{
     Render,
 };
 
-use super::camera::{ActiveCamera, VirtualCamera, VirtualCameraConstraints};
+use super::{
+    camera::{ActiveCamera, VirtualCamera, VirtualCameraConstraints},
+    kinematic::{sys_update_kinematics, Pos, Vel},
+};
 
-#[derive(Component)]
-pub struct Pos(Vec2);
-
-#[derive(Component)]
-pub struct Vel(Vec2);
+// === Systems === //
 
 #[derive(Component)]
 pub struct Player {
@@ -51,16 +48,14 @@ pub fn plugin(app: &mut App) {
         Update,
         (
             sys_handle_controls,
-            sys_update_kinematics
-                .after(sys_handle_controls)
-                .before(sys_add_collider),
+            sys_focus_camera_on_player.after(sys_update_kinematics),
         ),
     );
 
     app.add_systems(Render, (sys_render_players,));
 }
 
-fn sys_create_local_player(
+pub fn sys_create_local_player(
     mut rand: RandomAccess<(
         &mut TileWorld,
         &mut TileChunk,
@@ -76,18 +71,17 @@ fn sys_create_local_player(
     mut camera: ResMut<ActiveCamera>,
 ) {
     rand.provide(|| {
+        // Spawn world
         let world = spawn_entity(RenderableWorld::default());
-        let world_data = world.insert(TileWorld::new(TileLayerConfig {
-            offset: Vec2::ZERO,
-            size: 50.,
-        }));
-        let world_colliders = world.insert(WorldColliders::new(world_data));
+
+        // Setup camera
         camera.camera = Some(world.insert(VirtualCamera::new(
             Affine2::IDENTITY,
             Aabb::new_centered(Vec2::ZERO, Vec2::splat(1000.)),
             VirtualCameraConstraints::default().keep_visible_area(Vec2::new(1000., 1000.)),
         )));
 
+        // Setup material registry
         let mut registry = world.insert(MaterialRegistry::default());
         registry.register("game:air", spawn_entity(()));
         let grass = registry.register("game:grass", {
@@ -96,15 +90,29 @@ fn sys_create_local_player(
             descriptor.insert(TileColliderDescriptor::new([Aabb::ZERO_TO_ONE]));
             descriptor
         });
+        let stone = registry.register("game:stone", {
+            let descriptor = spawn_entity(());
+            descriptor.insert(SolidTileMaterial { color: GRAY });
+            descriptor.insert(TileColliderDescriptor::new([Aabb::ZERO_TO_ONE]));
+            descriptor
+        });
+
+        // Setup world
+        let world_data = world.insert(TileWorld::new(TileLayerConfig {
+            offset: Vec2::ZERO,
+            size: 50.,
+        }));
+        let world_colliders = world.insert(WorldColliders::new(world_data));
 
         for x in 0..500 {
             let v = (x as f32 / 10.).sin();
             world_data.set_tile(IVec2::new(x, (v * 10.) as i32), grass);
-            world_data.set_tile(IVec2::new(x, (v * 10.) as i32 - 20), grass);
+            world_data.set_tile(IVec2::new(x, (v * 10.) as i32 - 20), stone);
         }
 
         world.insert(KinematicApi::new(world_data, registry, world_colliders));
 
+        // Spawn player
         spawn_entity((
             Pos(Vec2::ZERO),
             Vel(Vec2::ONE),
@@ -117,43 +125,9 @@ fn sys_create_local_player(
     });
 }
 
-fn sys_update_kinematics(
-    mut query: Query<(&InsideWorld, &mut Pos, &mut Vel, &mut Collider)>,
-    mut rand: RandomAccess<(
-        &mut TileWorld,
-        &mut TileChunk,
-        &mut KinematicApi,
-        &mut TrackedColliderChunk,
-        &TrackedCollider,
-        &WorldColliders,
-        &TileColliderDescriptor,
-        &MaterialRegistry,
-        SendsEvent<WorldCreatedChunk>,
-    )>,
-) {
-    rand.provide(|| {
-        for (&InsideWorld(world), mut pos, mut vel, mut collider) in query.iter_mut() {
-            let mut world = world.entity().get::<KinematicApi>();
-
-            let delta = vel.0;
-            let filter = |coll| match coll {
-                AnyCollision::Tile(_, _, _) => true,
-                AnyCollision::Collider(_, _) => false,
-            };
-
-            let delta = world.move_by(collider.0, delta, filter);
-            pos.0 += delta;
-            collider.0 = Aabb::new_centered(pos.0, Vec2::splat(50.));
-
-            let mask = world.get_clip_mask(collider.0, vel.0, filter);
-            vel.0 = vel.0.mask(mask);
-        }
-    });
-}
-
-fn sys_handle_controls(
+pub fn sys_handle_controls(
     mut rand: RandomAccess<(&TileWorld, &mut VirtualCamera)>,
-    mut query: Query<(&InsideWorld, &Pos, &mut Vel, &mut Player)>,
+    mut query: Query<(&Pos, &mut Vel, &mut Player)>,
 ) {
     rand.provide(|| {
         let mut heading = Vec2::ZERO;
@@ -172,7 +146,7 @@ fn sys_handle_controls(
 
         heading = heading.normalize_or_zero();
 
-        for (&InsideWorld(world), pos, mut vel, mut player) in query.iter_mut() {
+        for (pos, mut vel, mut player) in query.iter_mut() {
             vel.0 += heading;
             vel.0 *= 0.98;
 
@@ -180,16 +154,27 @@ fn sys_handle_controls(
             if player.trail.len() > 100 {
                 player.trail.pop_back();
             }
-
-            world
-                .entity()
-                .get::<VirtualCamera>()
-                .set_transform(Affine2::from_translation(pos.0));
         }
     });
 }
 
-fn sys_render_players(mut query: Query<(&Pos, &Player)>, camera: Res<ActiveCamera>) {
+pub fn sys_focus_camera_on_player(
+    mut query: Query<(&InsideWorld, &Pos), With<Player>>,
+    mut rand: RandomAccess<(&mut TileWorld, &mut VirtualCamera)>,
+) {
+    rand.provide(|| {
+        let Some((&InsideWorld(world), pos)) = query.iter_mut().next() else {
+            return;
+        };
+
+        world
+            .entity()
+            .get::<VirtualCamera>()
+            .set_transform(Affine2::from_translation(pos.0));
+    });
+}
+
+pub fn sys_render_players(mut query: Query<(&Pos, &Player)>, camera: Res<ActiveCamera>) {
     let _guard = camera.apply();
 
     for (pos, player) in query.iter_mut() {

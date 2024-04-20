@@ -38,7 +38,7 @@ pub fn plugin(app: &mut App) {
     app.add_systems(Render, (sys_render_chunks,));
 }
 
-fn sys_render_chunks(
+pub fn sys_render_chunks(
     mut query: Query<(
         &ObjOwner<TileWorld>,
         &ObjOwner<MaterialRegistry>,

@@ -284,7 +284,7 @@ pub fn plugin(app: &mut App) {
     app.add_systems(PostUpdate, (sys_cleanup_chunk,));
 }
 
-fn sys_cleanup_chunk(
+pub fn sys_cleanup_chunk(
     mut query: RemovedComponents<ObjOwner<TileChunk>>,
     mut rand: RandomAccess<(&mut TileWorld, &mut TileChunk)>,
 ) {
