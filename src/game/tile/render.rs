@@ -3,10 +3,10 @@ use bevy_ecs::{
     component::Component,
     system::{Query, Res},
 };
-use macroquad::{color::Color, math::IVec2, shapes::draw_rectangle};
+use macroquad::{color::Color, shapes::draw_rectangle};
 
 use crate::{
-    game::actor::camera::ActiveCamera,
+    game::actor::camera::{ActiveCamera, VirtualCamera},
     random_component,
     util::arena::{ObjOwner, RandomAccess, RandomAppExt},
     Render,
@@ -49,32 +49,37 @@ fn sys_render_chunks(
         &TileChunk,
         &MaterialRegistry,
         &SolidTileMaterial,
+        &VirtualCamera,
     )>,
     camera: Res<ActiveCamera>,
 ) {
     let _guard = camera.apply();
 
     rand.provide(|| {
+        let camera = camera.camera.unwrap();
+
         for (&ObjOwner(world), &ObjOwner(registry), mut cache) in query.iter_mut() {
             let config = world.config();
             let registry = &*registry;
             let cache = &mut cache.cache;
 
-            for x in 0..100 {
-                for y in 0..100 {
-                    let material = world.tile(IVec2::new(x, y));
+            for tile in config
+                .actor_aabb_to_tile(camera.visible_aabb())
+                .inclusive()
+                .iter()
+            {
+                let material = world.tile(tile);
 
-                    if material == MaterialId::AIR {
-                        continue;
-                    }
-
-                    let Some(material) = cache.get(registry, material) else {
-                        continue;
-                    };
-
-                    let rect = config.tile_to_actor_rect(IVec2::new(x, y));
-                    draw_rectangle(rect.x(), rect.y(), rect.w(), rect.h(), material.color);
+                if material == MaterialId::AIR {
+                    continue;
                 }
+
+                let Some(material) = cache.get(registry, material) else {
+                    continue;
+                };
+
+                let rect = config.tile_to_actor_rect(tile);
+                draw_rectangle(rect.x(), rect.y(), rect.w(), rect.h(), material.color);
             }
         }
     });

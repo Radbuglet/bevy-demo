@@ -79,7 +79,7 @@ fn sys_create_local_player(
         let world = spawn_entity(RenderableWorld::default());
         let world_data = world.insert(TileWorld::new(TileLayerConfig {
             offset: Vec2::ZERO,
-            size: 10.,
+            size: 50.,
         }));
         let world_colliders = world.insert(WorldColliders::new(world_data));
         camera.camera = Some(world.insert(VirtualCamera::new(
@@ -97,8 +97,10 @@ fn sys_create_local_player(
             descriptor
         });
 
-        for x in 0..100 {
-            world_data.set_tile(IVec2::new(x, x), grass);
+        for x in 0..500 {
+            let v = (x as f32 / 10.).sin();
+            world_data.set_tile(IVec2::new(x, (v * 10.) as i32), grass);
+            world_data.set_tile(IVec2::new(x, (v * 10.) as i32 - 20), grass);
         }
 
         world.insert(KinematicApi::new(world_data, registry, world_colliders));
