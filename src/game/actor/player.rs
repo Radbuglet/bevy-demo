@@ -3,14 +3,16 @@ use std::collections::VecDeque;
 use bevy_app::{App, Startup, Update};
 use bevy_ecs::{
     component::Component,
+    event::EventReader,
     query::With,
     schedule::IntoSystemConfigs,
     system::{Query, Res, ResMut},
 };
 use macroquad::{
-    color::{Color, DARKPURPLE, GRAY, GREEN, RED},
+    color::{Color, DARKPURPLE, GRAY, GREEN, RED, WHITE, YELLOW},
     input::{is_key_down, is_mouse_button_down, mouse_position, KeyCode, MouseButton},
     math::{Affine2, IVec2, Vec2},
+    miniquad::window::screen_size,
     shapes::{draw_circle, draw_rectangle},
 };
 
@@ -22,17 +24,82 @@ use crate::{
             data::{TileChunk, TileLayerConfig, TileWorld, WorldCreatedChunk},
             kinematic::{KinematicApi, TileColliderDescriptor},
             material::{BaseMaterialDescriptor, MaterialId, MaterialRegistry},
-            render::{RenderableWorld, SolidTileMaterial},
+            render::{sys_render_chunks, RenderableWorld, SolidTileMaterial},
         },
     },
-    util::arena::{spawn_entity, RandomAccess, RandomEntityExt, SendsEvent},
+    random_component,
+    util::arena::{
+        spawn_entity, ObjOwner, RandomAccess, RandomAppExt, RandomEntityExt, SendsEvent,
+    },
     Render,
 };
 
 use super::{
     camera::{ActiveCamera, VirtualCamera, VirtualCameraConstraints},
-    kinematic::{sys_update_moving_colliders, ColliderListens, ColliderMoves, Pos, Vel},
+    kinematic::{
+        sys_update_moving_colliders, ColliderEvent, ColliderListens, ColliderMoves, Pos, Vel,
+    },
 };
+
+random_component!(Health);
+
+// === Health === //
+
+#[derive(Debug)]
+pub struct Health {
+    health: f32,
+    max: f32,
+}
+
+impl Health {
+    pub fn new(health: f32, max: f32) -> Self {
+        let max = max.max(0.);
+        let health = health.clamp(0., max);
+
+        Self { health, max }
+    }
+
+    pub fn new_full(max: f32) -> Self {
+        Self::new(max, max)
+    }
+
+    pub fn health(&self) -> f32 {
+        self.health
+    }
+
+    pub fn max(&self) -> f32 {
+        self.max
+    }
+
+    pub fn set_health(&mut self, health: f32) {
+        self.health = health.clamp(0., self.max);
+    }
+
+    pub fn set_max(&mut self, max: f32) {
+        self.max = max.max(0.);
+        self.health = self.health.min(self.max);
+    }
+
+    pub fn change_health(&mut self, amount: f32) {
+        self.set_health(self.health() + amount);
+    }
+
+    pub fn change_max(&mut self, by: f32) {
+        self.set_max(self.max() + by);
+    }
+
+    pub fn reheal(&mut self) {
+        self.health = self.max;
+    }
+
+    pub fn is_alive(&self) -> bool {
+        self.health != 0.
+    }
+
+    pub fn percentage(&self) -> f32 {
+        self.health / self.max
+    }
+}
 
 // === Systems === //
 
@@ -41,18 +108,29 @@ pub struct Player {
     trail: VecDeque<Vec2>,
 }
 
-pub fn plugin(app: &mut App) {
-    app.add_systems(Startup, (sys_create_local_player,));
+#[derive(Component)]
+pub struct HealthAnimation(f32);
 
+pub fn plugin(app: &mut App) {
+    app.add_random_component::<Health>();
+    app.add_systems(Startup, sys_create_local_player);
     app.add_systems(
         Update,
         (
             sys_handle_controls,
             sys_focus_camera_on_player.after(sys_update_moving_colliders),
+            sys_handle_damage,
         ),
     );
-
-    app.add_systems(Render, (sys_render_players,));
+    app.add_systems(
+        Render,
+        (
+            sys_render_players.before(sys_render_chunks),
+            sys_render_health_bar
+                .after(sys_render_players)
+                .after(sys_render_chunks),
+        ),
+    );
 }
 
 pub fn sys_create_local_player(
@@ -66,13 +144,14 @@ pub fn sys_create_local_player(
         &mut WorldColliders,
         &mut KinematicApi,
         &mut VirtualCamera,
+        &mut Health,
         SendsEvent<WorldCreatedChunk>,
     )>,
     mut camera: ResMut<ActiveCamera>,
 ) {
     rand.provide(|| {
         // Spawn world
-        let world = spawn_entity(RenderableWorld::default());
+        let world = spawn_entity((HealthAnimation(1.), RenderableWorld::default()));
 
         // Setup camera
         camera.camera = Some(world.insert(VirtualCamera::new(
@@ -111,6 +190,9 @@ pub fn sys_create_local_player(
         }
 
         world.insert(KinematicApi::new(world_data, registry, world_colliders));
+
+        // Setup health
+        world.insert(Health::new_full(50.));
 
         // Spawn player
         spawn_entity((
@@ -185,6 +267,26 @@ pub fn sys_handle_controls(
     });
 }
 
+pub fn sys_handle_damage(
+    mut rand: RandomAccess<(&TileWorld, &mut Health)>,
+    mut query: Query<&InsideWorld, With<Player>>,
+    mut events: EventReader<ColliderEvent>,
+) {
+    rand.provide(|| {
+        for event in events.read() {
+            if !event.entered {
+                continue;
+            }
+
+            let Ok(&InsideWorld(world)) = query.get_mut(event.other) else {
+                continue;
+            };
+
+            world.entity().get::<Health>().change_health(-2.);
+        }
+    });
+}
+
 pub fn sys_focus_camera_on_player(
     mut query: Query<(&InsideWorld, &Pos), With<Player>>,
     mut rand: RandomAccess<(&mut TileWorld, &mut VirtualCamera)>,
@@ -236,6 +338,45 @@ pub fn sys_render_players(
             }
 
             draw_circle(pos.0.x, pos.0.y, 20., RED);
+        }
+    });
+}
+
+pub fn sys_render_health_bar(
+    mut rand: RandomAccess<&Health>,
+    mut query: Query<(&ObjOwner<Health>, &mut HealthAnimation), With<ObjOwner<TileWorld>>>,
+) {
+    let screen_size = Vec2::from(screen_size());
+
+    rand.provide(|| {
+        for (&ObjOwner(hp), mut hp_anim) in query.iter_mut() {
+            let aabb = Aabb::new_centered(
+                Vec2::new(screen_size.x / 2., screen_size.y - 20.),
+                Vec2::new(screen_size.x * 0.8, 10.),
+            );
+
+            let aabb2 = aabb.grow(Vec2::splat(5.));
+            draw_rectangle(aabb2.x(), aabb2.y(), aabb2.w(), aabb2.h(), WHITE);
+
+            let hp_active = hp.percentage();
+            hp_anim.0 = (hp_anim.0 + hp_active) / 2.;
+
+            draw_rectangle(aabb.x(), aabb.y(), aabb.w(), aabb.h(), RED);
+            draw_rectangle(
+                aabb.x(),
+                aabb.y(),
+                aabb.w() * hp.percentage(),
+                aabb.h(),
+                GREEN,
+            );
+
+            if hp_anim.0 > hp_active {
+                let aabb3 = Aabb::new_poly(&[
+                    aabb.point_at(Vec2::new(hp_active, 0.)),
+                    aabb.point_at(Vec2::new(hp_anim.0, 1.)),
+                ]);
+                draw_rectangle(aabb3.x(), aabb3.y(), aabb3.w(), aabb3.h(), YELLOW);
+            }
         }
     });
 }
