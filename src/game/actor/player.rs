@@ -18,9 +18,13 @@ use crate::{
     game::{
         math::aabb::Aabb,
         tile::{
-            collider::{Collider, InsideWorld, WorldColliders},
+            collider::{
+                Collider, InsideWorld, TrackedCollider, TrackedColliderChunk, WorldColliders,
+            },
             data::{TileChunk, TileLayerConfig, TileWorld, WorldCreatedChunk},
-            kinematic::{KinematicApi, TileColliderDescriptor},
+            kinematic::{
+                filter_tangible_actors, KinematicApi, TangibleMarker, TileColliderDescriptor,
+            },
             material::{BaseMaterialDescriptor, MaterialId, MaterialRegistry},
             render::{RenderableWorld, SolidTileMaterial},
         },
@@ -106,16 +110,17 @@ pub struct HealthAnimation(f32);
 
 pub fn sys_create_local_player(
     mut rand: RandomAccess<(
-        &mut TileWorld,
-        &mut TileChunk,
-        &mut MaterialRegistry,
         &mut BaseMaterialDescriptor,
-        &mut TileColliderDescriptor,
-        &mut SolidTileMaterial,
-        &mut WorldColliders,
-        &mut KinematicApi,
-        &mut VirtualCamera,
         &mut Health,
+        &mut KinematicApi,
+        &mut MaterialRegistry,
+        &mut SolidTileMaterial,
+        &mut TangibleMarker,
+        &mut TileChunk,
+        &mut TileColliderDescriptor,
+        &mut TileWorld,
+        &mut VirtualCamera,
+        &mut WorldColliders,
         SendsEvent<WorldCreatedChunk>,
     )>,
     mut camera: ResMut<ActiveCamera>,
@@ -166,7 +171,7 @@ pub fn sys_create_local_player(
         world.insert(Health::new_full(50.));
 
         // Spawn player
-        spawn_entity((
+        let player = spawn_entity((
             Pos(Vec2::ZERO),
             Vel(Vec2::ONE),
             InsideWorld(world_data),
@@ -176,6 +181,7 @@ pub fn sys_create_local_player(
                 trail: VecDeque::new(),
             },
         ));
+        player.insert(TangibleMarker);
 
         // Spawn listener
         spawn_entity((
@@ -188,10 +194,16 @@ pub fn sys_create_local_player(
 
 pub fn sys_handle_controls(
     mut rand: RandomAccess<(
-        &mut TileWorld,
-        &mut TileChunk,
         &MaterialRegistry,
+        &mut KinematicApi,
+        &mut TileChunk,
+        &mut TileWorld,
         &mut VirtualCamera,
+        &mut WorldColliders,
+        &TangibleMarker,
+        &TileColliderDescriptor,
+        &TrackedCollider,
+        &TrackedColliderChunk,
         SendsEvent<WorldCreatedChunk>,
     )>,
     mut query: Query<(&InsideWorld, &Pos, &mut Vel, &mut Player)>,
@@ -216,6 +228,7 @@ pub fn sys_handle_controls(
         for (&InsideWorld(world), pos, mut vel, mut player) in query.iter_mut() {
             let camera = world.entity().get::<VirtualCamera>();
             let registry = world.entity().get::<MaterialRegistry>();
+            let mut kinematics = world.entity().get::<KinematicApi>();
 
             vel.0 += heading;
             vel.0 *= 0.98;
@@ -232,6 +245,19 @@ pub fn sys_handle_controls(
             if is_mouse_button_down(MouseButton::Left) {
                 world.set_tile(hover, MaterialId::AIR);
             } else if is_mouse_button_down(MouseButton::Right) {
+                let place_aabb = world
+                    .config()
+                    .tile_to_actor_rect(hover)
+                    .shrink(Vec2::splat(0.01));
+
+                if kinematics.has_colliders_in(place_aabb, filter_tangible_actors) {
+                    continue;
+                }
+
+                if world.tile(hover) != MaterialId::AIR {
+                    continue;
+                }
+
                 world.set_tile(hover, registry.lookup_by_name("game:stone").unwrap());
             }
         }

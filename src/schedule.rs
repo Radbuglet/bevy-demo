@@ -20,7 +20,7 @@ use crate::{
                 TrackedColliderChunk, WorldColliders,
             },
             data::{sys_unregister_chunk_from_world, TileChunk, TileWorld, WorldCreatedChunk},
-            kinematic::{KinematicApi, TileColliderDescriptor},
+            kinematic::{KinematicApi, TangibleMarker, TileColliderDescriptor},
             material::{BaseMaterialDescriptor, MaterialRegistry},
             render::{sys_render_chunks, SolidTileMaterial},
         },
@@ -36,6 +36,7 @@ pub fn plugin(app: &mut App) {
     app.add_random_component::<KinematicApi>();
     app.add_random_component::<MaterialRegistry>();
     app.add_random_component::<SolidTileMaterial>();
+    app.add_random_component::<TangibleMarker>();
     app.add_random_component::<TileChunk>();
     app.add_random_component::<TileColliderDescriptor>();
     app.add_random_component::<TileWorld>();

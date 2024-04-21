@@ -11,7 +11,7 @@ use crate::{
         glam::{add_magnitude, Axis2, BVec2Ext, Sign, Vec2Ext},
     },
     random_component,
-    util::arena::Obj,
+    util::arena::{Obj, RandomEntityExt},
 };
 
 use super::{
@@ -198,5 +198,19 @@ impl KinematicApi {
         }
 
         total_by
+    }
+}
+
+// === Filters === //
+
+#[derive(Debug, Clone, Default)]
+pub struct TangibleMarker;
+
+random_component!(TangibleMarker);
+
+pub fn filter_tangible_actors(collision: AnyCollision) -> bool {
+    match collision {
+        AnyCollision::Tile(_, _, _) => false,
+        AnyCollision::Collider(actor, _) => actor.has::<TangibleMarker>(),
     }
 }
