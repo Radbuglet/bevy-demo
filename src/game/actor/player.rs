@@ -31,7 +31,7 @@ use crate::{
 
 use super::{
     camera::{ActiveCamera, VirtualCamera, VirtualCameraConstraints},
-    kinematic::{sys_update_kinematics, Pos, Vel},
+    kinematic::{sys_update_moving_colliders, ColliderListens, ColliderMoves, Pos, Vel},
 };
 
 // === Systems === //
@@ -48,7 +48,7 @@ pub fn plugin(app: &mut App) {
         Update,
         (
             sys_handle_controls,
-            sys_focus_camera_on_player.after(sys_update_kinematics),
+            sys_focus_camera_on_player.after(sys_update_moving_colliders),
         ),
     );
 
@@ -118,9 +118,17 @@ pub fn sys_create_local_player(
             Vel(Vec2::ONE),
             InsideWorld(world_data),
             Collider(Aabb::ZERO_TO_ONE),
+            ColliderMoves,
             Player {
                 trail: VecDeque::new(),
             },
+        ));
+
+        // Spawn listener
+        spawn_entity((
+            InsideWorld(world_data),
+            Collider(Aabb::new(100., 100., 500., 500.)),
+            ColliderListens::default(),
         ));
     });
 }

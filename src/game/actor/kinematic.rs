@@ -1,6 +1,19 @@
 use bevy_app::{App, Update};
-use bevy_ecs::{component::Component, schedule::IntoSystemConfigs, system::Query};
-use macroquad::math::Vec2;
+use bevy_ecs::{
+    component::Component,
+    entity::Entity,
+    event::{Event, EventWriter},
+    query::With,
+    schedule::IntoSystemConfigs,
+    system::{Query, Res},
+};
+use cbit::cbit;
+use macroquad::{
+    color::{Color, BLUE},
+    math::Vec2,
+    shapes::draw_rectangle,
+};
+use rustc_hash::FxHashSet;
 
 use crate::{
     game::{
@@ -16,29 +29,50 @@ use crate::{
         },
     },
     util::arena::{RandomAccess, RandomEntityExt, SendsEvent},
+    Render,
 };
 
-use super::player::sys_handle_controls;
+use super::{camera::ActiveCamera, player::sys_handle_controls};
 
 // === Systems === //
 
-#[derive(Component)]
+#[derive(Debug, Component)]
 pub struct Pos(pub Vec2);
 
-#[derive(Component)]
+#[derive(Debug, Component)]
 pub struct Vel(pub Vec2);
 
-pub fn plugin(app: &mut App) {
-    app.add_systems(
-        Update,
-        sys_update_kinematics
-            .after(sys_handle_controls)
-            .before(sys_add_collider),
-    );
+#[derive(Debug, Component, Default)]
+pub struct ColliderMoves;
+
+#[derive(Debug, Component, Default)]
+pub struct ColliderListens {
+    contains: FxHashSet<Entity>,
 }
 
-pub fn sys_update_kinematics(
-    mut query: Query<(&InsideWorld, &mut Pos, &mut Vel, &mut Collider)>,
+#[derive(Debug, Event)]
+pub struct ColliderEvent {
+    pub listener: Entity,
+    pub other: Entity,
+    pub entered: bool,
+}
+
+pub fn plugin(app: &mut App) {
+    app.add_event::<ColliderEvent>();
+    app.add_systems(
+        Update,
+        (
+            sys_update_moving_colliders
+                .after(sys_handle_controls)
+                .before(sys_add_collider),
+            sys_update_listening_colliders,
+        ),
+    );
+    app.add_systems(Render, sys_draw_debug_colliders);
+}
+
+pub fn sys_update_moving_colliders(
+    mut query: Query<(&InsideWorld, &mut Pos, &mut Vel, &mut Collider), With<ColliderMoves>>,
     mut rand: RandomAccess<(
         &mut TileWorld,
         &mut TileChunk,
@@ -69,4 +103,65 @@ pub fn sys_update_kinematics(
             vel.0 = vel.0.mask(mask);
         }
     });
+}
+
+pub fn sys_update_listening_colliders(
+    mut rand: RandomAccess<(
+        &mut TileWorld,
+        &mut TileChunk,
+        &mut WorldColliders,
+        &mut TrackedColliderChunk,
+        &TrackedCollider,
+        SendsEvent<WorldCreatedChunk>,
+    )>,
+    mut query: Query<(Entity, &InsideWorld, &Collider, &mut ColliderListens)>,
+    mut events: EventWriter<ColliderEvent>,
+) {
+    rand.provide(|| {
+        let mut removed = FxHashSet::default();
+
+        for (listener, &InsideWorld(world), &Collider(aabb), mut listen_state) in query.iter_mut() {
+            let world = world.entity().get::<WorldColliders>();
+
+            removed.clear();
+            removed.extend(listen_state.contains.drain());
+
+            cbit! {
+                for (other, _) in world.collisions(aabb) {
+                    if listener == other {
+                        continue;
+                    }
+
+                    listen_state.contains.insert(other);
+                    if !removed.remove(&other) {
+                        log::info!("Enter: {other:?} (listener: {listener:?})");
+                        events.send(ColliderEvent { listener, other, entered: true });
+                    }
+                }
+            }
+
+            for other in removed.drain() {
+                log::info!("Exit: {other:?} (listener: {listener:?})");
+                events.send(ColliderEvent {
+                    listener,
+                    other,
+                    entered: false,
+                });
+            }
+        }
+    });
+}
+
+pub fn sys_draw_debug_colliders(mut query: Query<&Collider>, camera: Res<ActiveCamera>) {
+    let _guard = camera.apply();
+
+    for &Collider(aabb) in query.iter_mut() {
+        draw_rectangle(
+            aabb.x(),
+            aabb.y(),
+            aabb.w(),
+            aabb.h(),
+            Color::from_vec(BLUE.to_vec().truncate().extend(0.3)),
+        );
+    }
 }
