@@ -1,4 +1,3 @@
-use bevy_app::App;
 use bevy_ecs::{
     component::Component,
     system::{Query, Res},
@@ -8,8 +7,7 @@ use macroquad::{color::Color, shapes::draw_rectangle};
 use crate::{
     game::actor::camera::{ActiveCamera, VirtualCamera},
     random_component,
-    util::arena::{ObjOwner, RandomAccess, RandomAppExt},
-    Render,
+    util::arena::{ObjOwner, RandomAccess},
 };
 
 use super::{
@@ -32,11 +30,6 @@ pub struct SolidTileMaterial {
 }
 
 // === Systems === //
-
-pub fn plugin(app: &mut App) {
-    app.add_random_component::<SolidTileMaterial>();
-    app.add_systems(Render, (sys_render_chunks,));
-}
 
 pub fn sys_render_chunks(
     mut query: Query<(

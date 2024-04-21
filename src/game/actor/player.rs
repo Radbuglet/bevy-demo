@@ -1,11 +1,9 @@
 use std::collections::VecDeque;
 
-use bevy_app::{App, Startup, Update};
 use bevy_ecs::{
     component::Component,
     event::EventReader,
     query::With,
-    schedule::IntoSystemConfigs,
     system::{Query, Res, ResMut},
 };
 use macroquad::{
@@ -24,21 +22,16 @@ use crate::{
             data::{TileChunk, TileLayerConfig, TileWorld, WorldCreatedChunk},
             kinematic::{KinematicApi, TileColliderDescriptor},
             material::{BaseMaterialDescriptor, MaterialId, MaterialRegistry},
-            render::{sys_render_chunks, RenderableWorld, SolidTileMaterial},
+            render::{RenderableWorld, SolidTileMaterial},
         },
     },
     random_component,
-    util::arena::{
-        spawn_entity, ObjOwner, RandomAccess, RandomAppExt, RandomEntityExt, SendsEvent,
-    },
-    Render,
+    util::arena::{spawn_entity, ObjOwner, RandomAccess, RandomEntityExt, SendsEvent},
 };
 
 use super::{
     camera::{ActiveCamera, VirtualCamera, VirtualCameraConstraints},
-    kinematic::{
-        sys_update_moving_colliders, ColliderEvent, ColliderListens, ColliderMoves, Pos, Vel,
-    },
+    kinematic::{ColliderEvent, ColliderListens, ColliderMoves, Pos, Vel},
 };
 
 random_component!(Health);
@@ -110,28 +103,6 @@ pub struct Player {
 
 #[derive(Component)]
 pub struct HealthAnimation(f32);
-
-pub fn plugin(app: &mut App) {
-    app.add_random_component::<Health>();
-    app.add_systems(Startup, sys_create_local_player);
-    app.add_systems(
-        Update,
-        (
-            sys_handle_controls,
-            sys_focus_camera_on_player.after(sys_update_moving_colliders),
-            sys_handle_damage,
-        ),
-    );
-    app.add_systems(
-        Render,
-        (
-            sys_render_players.before(sys_render_chunks),
-            sys_render_health_bar
-                .after(sys_render_players)
-                .after(sys_render_chunks),
-        ),
-    );
-}
 
 pub fn sys_create_local_player(
     mut rand: RandomAccess<(

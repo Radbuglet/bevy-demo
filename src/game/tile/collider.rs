@@ -1,13 +1,11 @@
 use std::ops::ControlFlow;
 
-use bevy_app::{App, PostUpdate, Update};
 use bevy_ecs::{
     component::Component,
     entity::Entity,
     event::EventReader,
     query::{Added, Changed},
     removal_detection::RemovedComponents,
-    schedule::IntoSystemConfigs,
     system::Query,
 };
 use macroquad::math::{IVec2, Vec2};
@@ -16,7 +14,7 @@ use rustc_hash::FxHashSet;
 use crate::{
     game::math::aabb::Aabb,
     random_component,
-    util::arena::{Obj, ObjOwner, RandomAccess, RandomAppExt, RandomEntityExt, SendsEvent},
+    util::arena::{Obj, ObjOwner, RandomAccess, RandomEntityExt, SendsEvent},
 };
 
 use super::data::{TileChunk, TileLayerConfig, TileWorld, WorldCreatedChunk};
@@ -128,24 +126,7 @@ impl TrackedColliderChunk {
 
 // === Systems === //
 
-pub fn plugin(app: &mut App) {
-    app.add_random_component::<WorldColliders>();
-    app.add_random_component::<TrackedColliderChunk>();
-    app.add_random_component::<TrackedCollider>();
-
-    app.add_systems(
-        Update,
-        (
-            sys_add_collider_to_chunk,
-            sys_add_collider,
-            sys_move_colliders.after(sys_add_collider),
-        ),
-    );
-
-    app.add_systems(PostUpdate, (sys_remove_collider,));
-}
-
-pub fn sys_add_collider(
+pub fn sys_add_tracked_collider_to_collider(
     mut rand: RandomAccess<(
         &mut TrackedColliderChunk,
         &mut TrackedCollider,
@@ -166,7 +147,7 @@ pub fn sys_add_collider(
     });
 }
 
-pub fn sys_move_colliders(
+pub fn sys_move_tracked_colliders(
     mut rand: RandomAccess<(
         &mut TrackedColliderChunk,
         &mut TrackedCollider,
@@ -203,7 +184,7 @@ pub fn sys_move_colliders(
     });
 }
 
-pub fn sys_remove_collider(
+pub fn sys_remove_tracked_collider(
     mut removed: RemovedComponents<ObjOwner<TrackedCollider>>,
     mut rand: RandomAccess<(&mut TrackedColliderChunk, &mut TrackedCollider)>,
 ) {
@@ -215,7 +196,7 @@ pub fn sys_remove_collider(
     });
 }
 
-pub fn sys_add_collider_to_chunk(
+pub fn sys_add_collider_to_new_chunk(
     mut events: EventReader<WorldCreatedChunk>,
     mut rand: RandomAccess<(&TileWorld, &TileChunk, &mut TrackedColliderChunk)>,
     query: Query<(&ObjOwner<TileWorld>,)>,

@@ -1,4 +1,3 @@
-use bevy_app::App;
 use bevy_ecs::system::{ResMut, Resource};
 use macroquad::{
     camera::{pop_camera_state, push_camera_state, set_camera, Camera},
@@ -10,8 +9,7 @@ use macroquad::{
 use crate::{
     game::math::aabb::Aabb,
     random_component,
-    util::arena::{Obj, RandomAccess, RandomAppExt},
-    Render,
+    util::arena::{Obj, RandomAccess},
 };
 
 // === VirtualCamera === //
@@ -212,12 +210,6 @@ impl ActiveCamera {
             pop_camera_state();
         })
     }
-}
-
-pub fn plugin(app: &mut App) {
-    app.add_random_component::<VirtualCamera>();
-    app.init_resource::<ActiveCamera>();
-    app.add_systems(Render, sys_update_camera);
 }
 
 pub fn sys_update_camera(

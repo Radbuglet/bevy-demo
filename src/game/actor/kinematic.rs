@@ -1,10 +1,8 @@
-use bevy_app::{App, Update};
 use bevy_ecs::{
     component::Component,
     entity::Entity,
     event::{Event, EventWriter},
     query::With,
-    schedule::IntoSystemConfigs,
     system::{Query, Res},
 };
 use cbit::cbit;
@@ -20,8 +18,7 @@ use crate::{
         math::{aabb::Aabb, glam::Vec2Ext},
         tile::{
             collider::{
-                sys_add_collider, Collider, InsideWorld, TrackedCollider, TrackedColliderChunk,
-                WorldColliders,
+                Collider, InsideWorld, TrackedCollider, TrackedColliderChunk, WorldColliders,
             },
             data::{TileChunk, TileWorld, WorldCreatedChunk},
             kinematic::{AnyCollision, KinematicApi, TileColliderDescriptor},
@@ -29,10 +26,9 @@ use crate::{
         },
     },
     util::arena::{RandomAccess, RandomEntityExt, SendsEvent},
-    Render,
 };
 
-use super::{camera::ActiveCamera, player::sys_handle_controls};
+use super::camera::ActiveCamera;
 
 // === Systems === //
 
@@ -55,20 +51,6 @@ pub struct ColliderEvent {
     pub listener: Entity,
     pub other: Entity,
     pub entered: bool,
-}
-
-pub fn plugin(app: &mut App) {
-    app.add_event::<ColliderEvent>();
-    app.add_systems(
-        Update,
-        (
-            sys_update_moving_colliders
-                .after(sys_handle_controls)
-                .before(sys_add_collider),
-            sys_update_listening_colliders,
-        ),
-    );
-    app.add_systems(Render, sys_draw_debug_colliders);
 }
 
 pub fn sys_update_moving_colliders(

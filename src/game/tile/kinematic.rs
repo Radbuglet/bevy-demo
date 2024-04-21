@@ -1,6 +1,5 @@
 use std::ops::ControlFlow;
 
-use bevy_app::App;
 use bevy_ecs::entity::Entity;
 use cbit::cbit;
 use macroquad::math::{BVec2, IVec2, Vec2};
@@ -12,7 +11,7 @@ use crate::{
         glam::{add_magnitude, Axis2, BVec2Ext, Sign, Vec2Ext},
     },
     random_component,
-    util::arena::{Obj, RandomAppExt},
+    util::arena::Obj,
 };
 
 use super::{
@@ -200,11 +199,4 @@ impl KinematicApi {
 
         total_by
     }
-}
-
-// === Systems === //
-
-pub fn plugin(app: &mut App) {
-    app.add_random_component::<TileColliderDescriptor>();
-    app.add_random_component::<KinematicApi>();
 }

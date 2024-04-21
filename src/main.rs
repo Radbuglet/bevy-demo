@@ -14,6 +14,7 @@ use macroquad::{
 pub struct Render;
 
 pub mod game;
+pub mod schedule;
 pub mod util;
 
 #[macroquad::main("Bevy Demo")]
@@ -27,7 +28,7 @@ async fn main() {
         hierarchy_detection: LogLevel::Warn,
         ..Default::default()
     });
-    app.add_plugins(game::plugin);
+    app.add_plugins(schedule::plugin);
 
     while !is_quit_requested() && !is_key_pressed(KeyCode::Escape) {
         app.update();
