@@ -14,6 +14,7 @@ use crate::{
                 sys_handle_damage, sys_render_health_bar, sys_render_players,
                 sys_render_selection_indicator,
             },
+            projectile::{sys_apply_bullet_damage, sys_render_bullets, sys_tick_bullet_spawner},
         },
         tile::{
             collider::{
@@ -66,6 +67,8 @@ pub fn plugin(app: &mut App) {
             sys_update_listening_colliders,
             sys_handle_damage,
             // Update players
+            sys_tick_bullet_spawner,
+            sys_apply_bullet_damage,
             sys_focus_camera_on_player,
             // Update colliders
             sys_add_collider_to_new_chunk,
@@ -82,6 +85,7 @@ pub fn plugin(app: &mut App) {
             sys_update_camera,
             // Actors
             sys_render_players,
+            sys_render_bullets,
             sys_render_chunks,
             // Debug
             sys_draw_debug_colliders,

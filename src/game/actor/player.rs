@@ -40,6 +40,7 @@ use super::{
     camera::{ActiveCamera, VirtualCamera, VirtualCameraConstraints},
     health::Health,
     kinematic::{ColliderEvent, ColliderListens, ColliderMoves, Pos, Vel},
+    projectile::BulletSpawner,
 };
 
 // === Systems === //
@@ -129,11 +130,17 @@ pub fn sys_create_local_player(
             Pos(Vec2::new(0., -50.)),
             Vel(Vec2::ONE),
             InsideWorld(world_data),
-            Collider(Aabb::ZERO_TO_ONE),
+            Collider(Aabb::ZERO),
             ColliderMoves,
             PlayerState::default(),
         ));
         player.insert(TangibleMarker);
+
+        spawn_entity((
+            Pos(Vec2::new(-500., -200.)),
+            InsideWorld(world_data),
+            BulletSpawner,
+        ));
 
         // Spawn listener
         spawn_entity((
