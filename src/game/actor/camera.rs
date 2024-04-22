@@ -45,12 +45,7 @@ impl VirtualCamera {
     }
 
     pub fn visible_aabb(&self) -> Aabb {
-        let corners = self
-            .aabb()
-            .corners()
-            .map(|corner| self.transform.transform_point2(corner));
-
-        Aabb::new_poly(&corners)
+        self.aabb().map_affine(self.transform)
     }
 
     pub fn transform(&self) -> Affine2 {

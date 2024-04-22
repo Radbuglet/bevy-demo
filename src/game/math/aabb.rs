@@ -1,6 +1,6 @@
 use std::iter;
 
-use macroquad::math::{IVec2, Vec2};
+use macroquad::math::{Affine2, IVec2, Vec2};
 
 use super::glam::{AaLine, Axis2};
 
@@ -39,6 +39,14 @@ impl Aabb {
         Self { min, max }
     }
 
+    pub fn map_poly(&self, f: impl FnMut(Vec2) -> Vec2) -> Self {
+        Self::new_poly(&self.corners().map(f))
+    }
+
+    pub fn map_affine(&self, affine: Affine2) -> Self {
+        self.map_poly(|corner| affine.transform_point2(corner))
+    }
+
     pub fn top_left_to(&self, min: Vec2) -> Self {
         Self { min, max: self.max }
     }
@@ -66,6 +74,14 @@ impl Aabb {
             min: self.min,
             max: self.min + size,
         }
+    }
+
+    pub fn with_width(&self, width: f32) -> Self {
+        self.with_size(Vec2::new(width, self.h()))
+    }
+
+    pub fn with_height(&self, height: f32) -> Self {
+        self.with_size(Vec2::new(self.w(), height))
     }
 
     pub fn point_at(&self, percent: Vec2) -> Vec2 {

@@ -9,13 +9,12 @@ use cbit::cbit;
 use macroquad::{
     color::{Color, BLUE},
     math::Vec2,
-    shapes::draw_rectangle,
 };
 use rustc_hash::FxHashSet;
 
 use crate::{
     game::{
-        math::{aabb::Aabb, glam::Vec2Ext},
+        math::{aabb::Aabb, draw::draw_rectangle_aabb, glam::Vec2Ext},
         tile::{
             collider::{
                 Collider, InsideWorld, TrackedCollider, TrackedColliderChunk, WorldColliders,
@@ -138,12 +137,6 @@ pub fn sys_draw_debug_colliders(mut query: Query<&Collider>, camera: Res<ActiveC
     let _guard = camera.apply();
 
     for &Collider(aabb) in query.iter_mut() {
-        draw_rectangle(
-            aabb.x(),
-            aabb.y(),
-            aabb.w(),
-            aabb.h(),
-            Color::from_vec(BLUE.to_vec().truncate().extend(0.3)),
-        );
+        draw_rectangle_aabb(aabb, Color::from_vec(BLUE.to_vec().truncate().extend(0.3)));
     }
 }

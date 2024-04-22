@@ -12,12 +12,15 @@ use macroquad::{
     input::{is_key_down, is_mouse_button_down, mouse_position, KeyCode, MouseButton},
     math::{Affine2, IVec2, Vec2},
     miniquad::window::screen_size,
-    shapes::{draw_circle, draw_rectangle},
+    shapes::draw_circle,
 };
 
 use crate::{
     game::{
-        math::aabb::Aabb,
+        math::{
+            aabb::Aabb,
+            draw::{draw_rectangle_aabb, stroke_rectangle_aabb},
+        },
         tile::{
             collider::{
                 Collider, InsideWorld, TrackedCollider, TrackedColliderChunk, WorldColliders,
@@ -311,38 +314,9 @@ pub fn sys_render_selection_indicator(
 
             let aabb = config.floating_tile_to_actor_rect(world_state.focused_tile);
 
-            stroke_rectangle(aabb, 2., RED);
+            stroke_rectangle_aabb(aabb, 2., RED);
         }
     });
-}
-
-fn stroke_rectangle(aabb: Aabb, border: f32, color: Color) {
-    draw_rectangle2(
-        aabb.bottom_right_to(Vec2::new(aabb.max.x, aabb.min.y + border)),
-        color,
-    );
-
-    draw_rectangle2(
-        aabb.top_left_to(Vec2::new(aabb.min.x, aabb.max.y - border)),
-        color,
-    );
-
-    draw_rectangle2(
-        aabb.top_left_by(Vec2::new(0., border))
-            .with_size(Vec2::new(border, aabb.h() - border * 2.)),
-        color,
-    );
-
-    draw_rectangle2(
-        aabb.top_left_by(Vec2::new(aabb.w() - border, border))
-            .with_size(Vec2::new(border, aabb.h() - border * 2.)),
-        color,
-    );
-}
-
-fn draw_rectangle2(aabb: Aabb, color: Color) {
-    let aabb = aabb.normalized();
-    draw_rectangle(aabb.x(), aabb.y(), aabb.w(), aabb.h(), color);
 }
 
 pub fn sys_render_health_bar(
@@ -358,27 +332,22 @@ pub fn sys_render_health_bar(
                 Vec2::new(screen_size.x * 0.8, 10.),
             );
 
-            let aabb2 = aabb.grow(Vec2::splat(5.));
-            draw_rectangle(aabb2.x(), aabb2.y(), aabb2.w(), aabb2.h(), WHITE);
+            draw_rectangle_aabb(aabb.grow(Vec2::splat(5.)), WHITE);
 
             let hp_active = hp.percentage();
             hp_anim.0 = (hp_anim.0 + hp_active) / 2.;
 
-            draw_rectangle(aabb.x(), aabb.y(), aabb.w(), aabb.h(), RED);
-            draw_rectangle(
-                aabb.x(),
-                aabb.y(),
-                aabb.w() * hp.percentage(),
-                aabb.h(),
-                GREEN,
-            );
+            draw_rectangle_aabb(aabb, RED);
+            draw_rectangle_aabb(aabb.with_width(aabb.w() * hp.percentage()), GREEN);
 
             if hp_anim.0 > hp_active {
-                let aabb3 = Aabb::new_poly(&[
-                    aabb.point_at(Vec2::new(hp_active, 0.)),
-                    aabb.point_at(Vec2::new(hp_anim.0, 1.)),
-                ]);
-                draw_rectangle(aabb3.x(), aabb3.y(), aabb3.w(), aabb3.h(), YELLOW);
+                draw_rectangle_aabb(
+                    Aabb::new_poly(&[
+                        aabb.point_at(Vec2::new(hp_active, 0.)),
+                        aabb.point_at(Vec2::new(hp_anim.0, 1.)),
+                    ]),
+                    YELLOW,
+                );
             }
         }
     });

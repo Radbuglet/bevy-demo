@@ -2,10 +2,13 @@ use bevy_ecs::{
     component::Component,
     system::{Query, Res},
 };
-use macroquad::{color::Color, shapes::draw_rectangle};
+use macroquad::color::Color;
 
 use crate::{
-    game::actor::camera::{ActiveCamera, VirtualCamera},
+    game::{
+        actor::camera::{ActiveCamera, VirtualCamera},
+        math::draw::draw_rectangle_aabb,
+    },
     random_component,
     util::arena::{ObjOwner, RandomAccess},
 };
@@ -71,8 +74,7 @@ pub fn sys_render_chunks(
                     continue;
                 };
 
-                let rect = config.tile_to_actor_rect(tile);
-                draw_rectangle(rect.x(), rect.y(), rect.w(), rect.h(), material.color);
+                draw_rectangle_aabb(config.tile_to_actor_rect(tile), material.color);
             }
         }
     });
