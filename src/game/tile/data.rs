@@ -1,3 +1,5 @@
+use std::ops::ControlFlow;
+
 use bevy_ecs::{entity::Entity, event::Event, removal_detection::RemovedComponents};
 use macroquad::math::{IVec2, Vec2};
 use rustc_hash::FxHashMap;
@@ -72,10 +74,7 @@ impl TileLayerConfig {
     }
 
     pub fn floating_tile_to_actor_rect(&self, vec: Vec2) -> Aabb {
-        Aabb::new_sized(
-            vec * self.size,
-            Vec2::splat(self.size),
-        )
+        Aabb::new_sized(vec * self.size, Vec2::splat(self.size))
     }
 
     pub fn decompose_world_pos(v: IVec2) -> (IVec2, IVec2) {
@@ -151,6 +150,32 @@ impl TileLayerConfig {
         }
 
         intersections
+    }
+
+    pub fn step_ray_tiles<B>(
+        &self,
+        src: Vec2,
+        dst: Vec2,
+        mut f: impl FnMut(IVec2) -> ControlFlow<B>,
+    ) -> ControlFlow<B> {
+        let mut origin = src;
+        let mut length = (dst - src).length();
+        let delta = (dst - src) / length;
+
+        if !delta.is_nan() {
+            while length > 0. {
+                let step_size = length.min(self.size);
+                for isect in self.step_ray(origin, delta * step_size) {
+                    f(isect.entered_tile)?;
+                }
+                length -= step_size;
+                origin += delta * step_size;
+            }
+        }
+
+        f(self.actor_to_tile(dst))?;
+
+        ControlFlow::Continue(())
     }
 }
 

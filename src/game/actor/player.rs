@@ -6,6 +6,7 @@ use bevy_ecs::{
     query::With,
     system::{Query, Res, ResMut},
 };
+use cbit::cbit;
 use macroquad::{
     color::{Color, DARKPURPLE, GRAY, GREEN, RED, WHITE, YELLOW},
     input::{is_key_down, is_mouse_button_down, mouse_position, KeyCode, MouseButton},
@@ -48,6 +49,7 @@ pub struct WorldState {
 #[derive(Component, Default)]
 pub struct PlayerState {
     trail: VecDeque<Vec2>,
+    last_tile: Option<Vec2>,
 }
 
 #[derive(Component)]
@@ -173,39 +175,54 @@ pub fn sys_handle_controls(
         heading = heading.normalize_or_zero();
 
         for (&InsideWorld(world), pos, mut vel, mut player) in query.iter_mut() {
+            let config = world.config();
             let camera = world.entity().get::<VirtualCamera>();
             let registry = world.entity().get::<MaterialRegistry>();
             let mut kinematics = world.entity().get::<KinematicApi>();
 
+            // Update heading vector
             vel.0 += heading;
             vel.0 *= 0.98;
 
+            // Update trail
             player.trail.push_front(pos.0);
             if player.trail.len() > 100 {
                 player.trail.pop_back();
             }
 
-            let hover = Vec2::from(mouse_position());
-            let hover = camera.project(hover);
-            let hover = world.config().actor_to_tile(hover);
+            // Determine the tile over which the player's cursor is hovering.
+            let dest = Vec2::from(mouse_position());
+            let dest = camera.project(dest);
+
+            let src = player.last_tile.unwrap_or(dest);
+            player.last_tile = Some(dest);
 
             if is_mouse_button_down(MouseButton::Left) {
-                world.set_tile(hover, MaterialId::AIR);
+                cbit! {
+                    for pos in config.step_ray_tiles(src, dest) {
+                        world.set_tile(pos, MaterialId::AIR);
+                    }
+                }
             } else if is_mouse_button_down(MouseButton::Right) {
-                let place_aabb = world
-                    .config()
-                    .tile_to_actor_rect(hover)
-                    .shrink(Vec2::splat(0.01));
+                cbit! {
+                    for pos in config.step_ray_tiles(src, dest) {
+                        let place_aabb = config
+                            .tile_to_actor_rect(pos)
+                            .shrink(Vec2::splat(0.01));
 
-                if kinematics.has_colliders_in(place_aabb, filter_tangible_actors) {
-                    continue;
+                        if kinematics.has_colliders_in(place_aabb, filter_tangible_actors) {
+                            continue;
+                        }
+
+                        if world.tile(pos) != MaterialId::AIR {
+                            continue;
+                        }
+
+                        world.set_tile(pos, registry.lookup_by_name("game:stone").unwrap());
+                    }
                 }
-
-                if world.tile(hover) != MaterialId::AIR {
-                    continue;
-                }
-
-                world.set_tile(hover, registry.lookup_by_name("game:stone").unwrap());
+            } else {
+                player.last_tile = None;
             }
         }
     });
