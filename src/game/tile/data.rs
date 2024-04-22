@@ -71,6 +71,13 @@ impl TileLayerConfig {
         )
     }
 
+    pub fn floating_tile_to_actor_rect(&self, vec: Vec2) -> Aabb {
+        Aabb::new_sized(
+            vec * self.size,
+            Vec2::splat(self.size),
+        )
+    }
+
     pub fn decompose_world_pos(v: IVec2) -> (IVec2, IVec2) {
         let IVec2 { x, y } = v;
 

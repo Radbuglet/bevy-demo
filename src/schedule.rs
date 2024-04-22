@@ -4,13 +4,15 @@ use crate::{
     game::{
         actor::{
             camera::{sys_update_camera, ActiveCamera, VirtualCamera},
+            health::Health,
             kinematic::{
                 sys_draw_debug_colliders, sys_update_listening_colliders,
                 sys_update_moving_colliders, ColliderEvent,
             },
             player::{
                 sys_create_local_player, sys_focus_camera_on_player, sys_handle_controls,
-                sys_handle_damage, sys_render_health_bar, sys_render_players, Health,
+                sys_handle_damage, sys_render_health_bar, sys_render_players,
+                sys_render_selection_indicator,
             },
         },
         tile::{
@@ -84,6 +86,7 @@ pub fn plugin(app: &mut App) {
             // Debug
             sys_draw_debug_colliders,
             // UI
+            sys_render_selection_indicator,
             sys_render_health_bar,
         )),
     );

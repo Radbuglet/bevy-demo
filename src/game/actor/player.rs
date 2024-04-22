@@ -29,79 +29,24 @@ use crate::{
             render::{RenderableWorld, SolidTileMaterial},
         },
     },
-    random_component,
     util::arena::{spawn_entity, ObjOwner, RandomAccess, RandomEntityExt, SendsEvent},
 };
 
 use super::{
     camera::{ActiveCamera, VirtualCamera, VirtualCameraConstraints},
+    health::Health,
     kinematic::{ColliderEvent, ColliderListens, ColliderMoves, Pos, Vel},
 };
 
-random_component!(Health);
-
-// === Health === //
-
-#[derive(Debug)]
-pub struct Health {
-    health: f32,
-    max: f32,
-}
-
-impl Health {
-    pub fn new(health: f32, max: f32) -> Self {
-        let max = max.max(0.);
-        let health = health.clamp(0., max);
-
-        Self { health, max }
-    }
-
-    pub fn new_full(max: f32) -> Self {
-        Self::new(max, max)
-    }
-
-    pub fn health(&self) -> f32 {
-        self.health
-    }
-
-    pub fn max(&self) -> f32 {
-        self.max
-    }
-
-    pub fn set_health(&mut self, health: f32) {
-        self.health = health.clamp(0., self.max);
-    }
-
-    pub fn set_max(&mut self, max: f32) {
-        self.max = max.max(0.);
-        self.health = self.health.min(self.max);
-    }
-
-    pub fn change_health(&mut self, amount: f32) {
-        self.set_health(self.health() + amount);
-    }
-
-    pub fn change_max(&mut self, by: f32) {
-        self.set_max(self.max() + by);
-    }
-
-    pub fn reheal(&mut self) {
-        self.health = self.max;
-    }
-
-    pub fn is_alive(&self) -> bool {
-        self.health != 0.
-    }
-
-    pub fn percentage(&self) -> f32 {
-        self.health / self.max
-    }
-}
-
 // === Systems === //
 
-#[derive(Component)]
-pub struct Player {
+#[derive(Component, Default)]
+pub struct WorldState {
+    focused_tile: Vec2,
+}
+
+#[derive(Component, Default)]
+pub struct PlayerState {
     trail: VecDeque<Vec2>,
 }
 
@@ -127,7 +72,11 @@ pub fn sys_create_local_player(
 ) {
     rand.provide(|| {
         // Spawn world
-        let world = spawn_entity((HealthAnimation(1.), RenderableWorld::default()));
+        let world = spawn_entity((
+            HealthAnimation(1.),
+            RenderableWorld::default(),
+            WorldState::default(),
+        ));
 
         // Setup camera
         camera.camera = Some(world.insert(VirtualCamera::new(
@@ -172,14 +121,12 @@ pub fn sys_create_local_player(
 
         // Spawn player
         let player = spawn_entity((
-            Pos(Vec2::ZERO),
+            Pos(Vec2::new(0., -50.)),
             Vel(Vec2::ONE),
             InsideWorld(world_data),
             Collider(Aabb::ZERO_TO_ONE),
             ColliderMoves,
-            Player {
-                trail: VecDeque::new(),
-            },
+            PlayerState::default(),
         ));
         player.insert(TangibleMarker);
 
@@ -206,7 +153,7 @@ pub fn sys_handle_controls(
         &TrackedColliderChunk,
         SendsEvent<WorldCreatedChunk>,
     )>,
-    mut query: Query<(&InsideWorld, &Pos, &mut Vel, &mut Player)>,
+    mut query: Query<(&InsideWorld, &Pos, &mut Vel, &mut PlayerState)>,
 ) {
     rand.provide(|| {
         let mut heading = Vec2::ZERO;
@@ -266,7 +213,7 @@ pub fn sys_handle_controls(
 
 pub fn sys_handle_damage(
     mut rand: RandomAccess<(&TileWorld, &mut Health)>,
-    mut query: Query<&InsideWorld, With<Player>>,
+    mut query: Query<&InsideWorld, With<PlayerState>>,
     mut events: EventReader<ColliderEvent>,
 ) {
     rand.provide(|| {
@@ -285,7 +232,7 @@ pub fn sys_handle_damage(
 }
 
 pub fn sys_focus_camera_on_player(
-    mut query: Query<(&InsideWorld, &Pos), With<Player>>,
+    mut query: Query<(&InsideWorld, &Pos), With<PlayerState>>,
     mut rand: RandomAccess<(&mut TileWorld, &mut VirtualCamera)>,
 ) {
     rand.provide(|| {
@@ -302,24 +249,13 @@ pub fn sys_focus_camera_on_player(
 
 pub fn sys_render_players(
     mut rand: RandomAccess<(&TileWorld, &mut VirtualCamera)>,
-    mut query: Query<(&InsideWorld, &Pos, &Player)>,
+    mut query: Query<(&Pos, &PlayerState)>,
     camera: Res<ActiveCamera>,
 ) {
     let _guard = camera.apply();
 
     rand.provide(|| {
-        for (&InsideWorld(world), pos, player) in query.iter_mut() {
-            let config = world.config();
-
-            // Draw placement indicator
-            {
-                let pos = Vec2::from(mouse_position());
-                let pos = camera.camera.unwrap().project(pos);
-                let pos = config.tile_to_actor_rect(config.actor_to_tile(pos));
-
-                draw_rectangle(pos.x(), pos.y(), pos.w(), pos.h(), RED);
-            }
-
+        for (pos, player) in query.iter_mut() {
             // Draw player
             for (i, &trail) in player.trail.iter().rev().enumerate() {
                 draw_circle(
@@ -337,6 +273,59 @@ pub fn sys_render_players(
             draw_circle(pos.0.x, pos.0.y, 20., RED);
         }
     });
+}
+
+pub fn sys_render_selection_indicator(
+    mut rand: RandomAccess<(&TileWorld, &mut VirtualCamera)>,
+    mut query: Query<(&ObjOwner<TileWorld>, &mut WorldState)>,
+    camera: Res<ActiveCamera>,
+) {
+    let _guard = camera.apply();
+
+    rand.provide(|| {
+        for (&ObjOwner(world), mut world_state) in query.iter_mut() {
+            let config = world.config();
+
+            let pos = Vec2::from(mouse_position());
+            let pos = camera.camera.unwrap().project(pos);
+            let pos = config.actor_to_tile(pos).as_vec2();
+
+            world_state.focused_tile = (world_state.focused_tile + pos * 5.) / (1. + 5.);
+
+            let aabb = config.floating_tile_to_actor_rect(world_state.focused_tile);
+
+            stroke_rectangle(aabb, 2., RED);
+        }
+    });
+}
+
+fn stroke_rectangle(aabb: Aabb, border: f32, color: Color) {
+    draw_rectangle2(
+        aabb.bottom_right_to(Vec2::new(aabb.max.x, aabb.min.y + border)),
+        color,
+    );
+
+    draw_rectangle2(
+        aabb.top_left_to(Vec2::new(aabb.min.x, aabb.max.y - border)),
+        color,
+    );
+
+    draw_rectangle2(
+        aabb.top_left_by(Vec2::new(0., border))
+            .with_size(Vec2::new(border, aabb.h() - border * 2.)),
+        color,
+    );
+
+    draw_rectangle2(
+        aabb.top_left_by(Vec2::new(aabb.w() - border, border))
+            .with_size(Vec2::new(border, aabb.h() - border * 2.)),
+        color,
+    );
+}
+
+fn draw_rectangle2(aabb: Aabb, color: Color) {
+    let aabb = aabb.normalized();
+    draw_rectangle(aabb.x(), aabb.y(), aabb.w(), aabb.h(), color);
 }
 
 pub fn sys_render_health_bar(

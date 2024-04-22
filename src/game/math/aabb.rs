@@ -39,6 +39,35 @@ impl Aabb {
         Self { min, max }
     }
 
+    pub fn top_left_to(&self, min: Vec2) -> Self {
+        Self { min, max: self.max }
+    }
+
+    pub fn top_left_by(&self, by: Vec2) -> Self {
+        Self {
+            min: self.min + by,
+            max: self.max,
+        }
+    }
+
+    pub fn bottom_right_to(&self, max: Vec2) -> Self {
+        Self { min: self.min, max }
+    }
+
+    pub fn bottom_right_by(&self, by: Vec2) -> Self {
+        Self {
+            min: self.min,
+            max: self.max + by,
+        }
+    }
+
+    pub fn with_size(&self, size: Vec2) -> Self {
+        Self {
+            min: self.min,
+            max: self.min + size,
+        }
+    }
+
     pub fn point_at(&self, percent: Vec2) -> Vec2 {
         self.min + self.size() * percent
     }
